@@ -1,0 +1,28 @@
+(defun factorial (n) {
+    (if (<= n 1)
+        1
+        n * (factorial n - 1))
+})
+
+(def result (factorial 5))
+(println "Factorial of 5 is" result)
+
+(struct Point (x y)
+    (distance (other) {
+        (sqrt (self.x - other.x) * (self.x - other.x)
+            + (self.y - other.y) * (self.y - other.y))
+    })
+
+    (add (other) {
+        (Point (self.x + other.x) (self.y + other.y))
+    })
+
+    (str () {
+        (String.fmt "({}, {})" self.x self.y)
+    })
+)
+
+(def p1 (Point 0 1))
+(def p2 (Point 1 0))
+(println (p1.distance p2))
+(println ((p1.add p2).str))
