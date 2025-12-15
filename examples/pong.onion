@@ -1,0 +1,77 @@
+
+
+
+(struct Pong (p1_score p2_score p1_y p2_y p_h p_w ball_x ball_y ball_dx ball_dy ball_size width height)
+    (load () {
+        (println "Pong Started! Controls: W/S for P1, Up/Down for P2.")
+    })
+    (update (dt) {
+        (if (Game.is_key_down "W") {
+            self.p1_y = self.p1_y - 5
+        })
+        (if (Game.is_key_down "S") {
+            self.p1_y = self.p1_y + 5
+        })
+
+        (if (Game.is_key_down "UP") {
+            self.p2_y = self.p2_y - 5
+        })
+        (if (Game.is_key_down "DOWN") {
+            self.p2_y = self.p2_y + 5
+        })
+
+        self.ball_x = self.ball_x + self.ball_dx
+        self.ball_y = self.ball_y + self.ball_dy
+
+        (if self.ball_y < 0 {
+            self.ball_dy = ! self.ball_dy
+        })
+        (if self.ball_y > self.height {
+            self.ball_dy = ! self.ball_dy
+        })
+
+        (if (and self.ball_x < self.p_w + 50 self.ball_y > self.p1_y self.ball_y < self.p1_y + self.p_h) {
+            self.ball_dx = ! self.ball_dx
+        })
+
+        (if (and self.ball_x > self.width - self.p_w - 50 self.ball_y > self.p2_y self.ball_y < self.p2_y + self.p_h) {
+            self.ball_dx = ! self.ball_dx
+        })
+
+        (if self.ball_x < 0 {
+            self.ball_x = 400
+            self.ball_y = 300
+            self.p2_score = self.p2_score + 1
+            self.ball_dx = ! self.ball_dx
+        })
+        (if self.ball_x > self.width {
+            self.ball_x = 400
+            self.ball_y = 300
+            self.p1_score = self.p1_score + 1
+            self.ball_dx = ! self.ball_dx
+        })
+    })
+    (draw () {
+        (Game.clear 0x202020)
+        (Game.rect 50 self.p1_y self.p_w self.p_h 0x00FF00)
+        (Game.rect 750 self.p2_y self.p_w self.p_h 0x0000FF)
+        (Game.rect self.ball_x self.ball_y self.ball_size self.ball_size 0xFFFFFF)
+        (Game.draw_text 50 50 (String.fmt "{}" self.p1_score) 0xFFFFFF)
+        (Game.draw_text 750 50 (String.fmt "{}" self.p2_score) 0xFFFFFF)
+    })
+)
+
+(def instance (Pong 0 0 250 250 100 20 400 300 5 3 10 800 600))
+(defun update (dt) {
+    (instance.update dt)
+})
+
+(defun draw () {
+    (instance.draw)
+})
+
+(defun load () {
+    (instance.load)
+})
+
+(Game.run width height "Onion Pong")

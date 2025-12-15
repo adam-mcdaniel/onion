@@ -1,0 +1,20 @@
+(println "Welcome to the Guessing Game!")
+(def target (Math.rand_int 1 100))
+(def attempts 0)
+(def guessed 0)
+
+(println "I have picked a number between 1 and 100.")
+
+(while (== guessed 0)
+    (println "Enter your guess:")
+    (def input (IO.read_line))
+    (def guess (Type.to_int input))
+    (set! attempts (+ attempts 1))
+    
+    (if (== guess target)
+        (block
+            (println (String.fmt "Correct! You got it in {} attempts." attempts))
+            (set! guessed 1))
+        (if (< guess target)
+            (println "Too low!")
+            (println "Too high!"))))

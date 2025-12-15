@@ -1,0 +1,12 @@
+(defun fib (n)
+    (if (<= n 1)
+        n
+        (+ (fib (- n 1)) (fib (- n 2)))))
+
+(println "Calculating Fibonacci of 10...")
+(def start (Time.now))
+(def result (fib 10))
+(def end (Time.now))
+
+(println (String.fmt "Result: {}" result))
+(println (String.fmt "Time: {}s" (- end start)))

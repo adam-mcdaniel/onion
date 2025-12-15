@@ -82,7 +82,6 @@ pub enum Expr {
     Str(String),
     Sym(Symbol),
     List(Vec<Expr>),
-    Vector(Vec<Expr>),
     Map(BTreeMap<Expr, Expr>),
     HashMap(HashMap<Expr, Expr>),
     Tagged {
@@ -219,7 +218,6 @@ impl Expr {
             Expr::Function { .. } => 10,
             Expr::Quoted(_) => 11,
             Expr::Ref(_) => 12,
-            Expr::Vector(_) => 13,
         }
     }
 }
@@ -233,7 +231,6 @@ impl std::hash::Hash for Expr {
                 i.hash(state);
             }
             Expr::Float(f) => {
-                // Hash the bits of the float
                 f.to_bits().hash(state);
             }
             Expr::Str(s) => {
@@ -254,7 +251,6 @@ impl std::hash::Hash for Expr {
                 }
             }
             Expr::HashMap(hm) => {
-                // To ensure order-independent hashing, we can hash the length and then each key-value pair sorted by key
                 let mut items: Vec<(&Expr, &Expr)> = hm.iter().collect();
                 items.sort_by(|a, b| a.0.cmp(b.0));
                 for (k, v) in items {
@@ -267,7 +263,6 @@ impl std::hash::Hash for Expr {
                 value.hash(state);
             }
             Expr::Extern(f) => {
-                // Hash the function pointer address
                 f.hash(state);
             }
             Expr::Function {
@@ -285,13 +280,7 @@ impl std::hash::Hash for Expr {
                 expr.hash(state);
             }
             Expr::Ref(r) => {
-                // Hash the pointer address of the Arc
                 Arc::as_ptr(r).hash(state);
-            }
-            Expr::Vector(v) => {
-                for item in v {
-                    item.hash(state);
-                }
             }
         }
     }
@@ -352,7 +341,6 @@ impl Ord for Expr {
             },
             (Expr::Quoted(a), Expr::Quoted(b)) => a.cmp(b),
             (Expr::Ref(a), Expr::Ref(b)) => Arc::as_ptr(a).cmp(&Arc::as_ptr(b)),
-            // Different variants are ordered by their discriminant
             _ => self.discriminant().cmp(&other.discriminant()),
         }
     }
@@ -467,22 +455,8 @@ impl std::fmt::Display for Expr {
                 }
                 write!(f, ")")
             }
-            Expr::Vector(l) => {
-                write!(f, "[")?;
-                let mut first = true;
-                for item in l {
-                    if !first {
-                        write!(f, " ")?;
-                    }
-                    write!(f, "{}", item)?;
-                    first = false;
-                }
-                write!(f, "]")
-            }
             Expr::Map(m) => {
-                write!(f, "#[")?; // Map uses #[ now? Or keep [ for Map?
-                // Parser uses #[ for map?
-                // Let's use #[ for Map to avoid confusing with Vector [
+                write!(f, "[")?; // Map uses #[ now? Or keep [ for Map?
                 let mut first = true;
                 for (k, v) in m {
                     if !first {

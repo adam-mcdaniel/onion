@@ -22,6 +22,10 @@ struct Cli {
     /// Enable debug output
     #[arg(short, long)]
     debug: bool,
+
+    /// Arguments for the script
+    #[arg(allow_hyphen_values = true)]
+    args: Vec<String>,
 }
 
 fn main() {

@@ -1,0 +1,96 @@
+
+
+
+(struct Life (w h)
+    (load () {
+        (println "Life Started!")
+        self.grid = (Collections.map (Collections.range 0 self.w * self.h) (fun (i) (Math.rand_int 0 2)))
+        (println "Grid:" self.grid)
+        self.time_since_update = 0
+    })
+    (get (x y) {
+        (if x >= self.w {
+            0
+        } {
+            (if y >= self.h {
+                0
+            } {
+                self.grid ? x + y * self.w
+            })
+        })
+    })
+
+    (count_neighbors (x y) {
+        let count = 0
+        count = count + (self.get x - 1 y - 1)
+        count = count + (self.get x y - 1)
+        count = count + (self.get x + 1 y - 1)
+        count = count + (self.get x - 1 y)
+        count = count + (self.get x + 1 y)
+        count = count + (self.get x - 1 y + 1)
+        count = count + (self.get x y + 1)
+        count = count + (self.get x + 1 y + 1)
+        count
+    })
+    (update (dt) {
+        self.time_since_update = self.time_since_update + dt
+        (if self.time_since_update >= 0.25 {
+            self.time_since_update = 0
+            new_grid = (Collections.map (Collections.range 0 self.w * self.h) (fun (i) {
+                x = i % self.w
+                y = i / self.w
+
+                count = (self.count_neighbors x y)
+                result = (if (self.get x y) == 1 {
+                    (if (count < 2) {
+                        0
+                    } (if (count > 3) {
+                        0
+                    } {
+                        1
+                    }))
+                } {
+                    (if (count == 3) {
+                        1
+                    } {
+                        0
+                    })
+                })
+
+                result
+            }))
+            self.grid = new_grid
+            (println "Grid:" self.grid)
+        })
+    })
+    
+    (draw () {
+        (Game.draw_text 10 10 "Onion2D Life" 0xFF0000)
+        (Collections.map (Collections.range 0 self.w * self.h) (fun (i) {
+            x = i % self.w
+            y = i / self.w
+            (Game.rect {x * 20 + 100} {y * 20 + 100} 20 20 (if (self.get x y) == 1 {
+                0x00FFFF
+            } {
+                0x000000
+            }))
+        }))
+    })
+)
+
+(def instance (Life 30 30))
+
+(defun load () {
+    (instance.load)
+})
+
+(defun update (dt) {
+    (instance.update dt)
+})
+
+(defun draw () {
+    (instance.draw)
+})
+
+
+(Game.run 800 800 "Onion Life")

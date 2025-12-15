@@ -19,10 +19,30 @@
 
     (str () {
         (String.fmt "({}, {})" self.x self.y)
-    })
-)
+    }))
+
+(defun merge (left right)
+    (if ((length left) == 0) right
+        (if ((length right) == 0) left
+            (if ((first left) < (first right))
+                (cons (first left) (merge (rest left) right))
+                (cons (first right) (merge left (rest right)))))))
+
+
+(defun mergesort (lst)
+    (if ((len lst) < 2) lst
+        {
+            (def l (len lst))
+            (def mid (l / 2))
+            (def left (take mid lst))
+            (def right (drop mid lst))
+            (merge (mergesort left) (mergesort right))
+        }))
+
+(println (mergesort (list 5 3 8 1 2 7 4 6)))
 
 (def p1 (Point 0 1))
 (def p2 (Point 1 0))
 (println (p1.distance p2))
 (println ((p1.add p2).str))
+

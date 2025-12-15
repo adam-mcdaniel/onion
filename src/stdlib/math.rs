@@ -132,14 +132,106 @@ pub fn register(ctx: &mut Context) {
      }, "max", "Maximum value"));
 
 
+    // Logarithms
+    math_exports.insert(Expr::sym("log"), Expr::extern_fun(|args, ctx| {
+         if args.len() != 2 { return Expr::Nil; }
+         let n = crate::context::eval(args[0].clone(), ctx);
+         let base = crate::context::eval(args[1].clone(), ctx);
+         match (n.as_number(), base.as_number()) {
+             (Some(n), Some(b)) => Expr::Float(n.log(b)),
+             _ => Expr::Nil
+         }
+    }, "log", "Logarithm of n base b"));
+
+    math_exports.insert(Expr::sym("ln"), Expr::extern_fun(|args, ctx| {
+         match eval_first(args, ctx).as_number() {
+             Some(n) => Expr::Float(n.ln()),
+             None => Expr::Nil
+         }
+    }, "ln", "Natural logarithm"));
+
+    math_exports.insert(Expr::sym("log10"), Expr::extern_fun(|args, ctx| {
+        match eval_first(args, ctx).as_number() {
+            Some(n) => Expr::Float(n.log10()),
+            None => Expr::Nil
+        }
+    }, "log10", "Base-10 logarithm"));
+
+    math_exports.insert(Expr::sym("exp"), Expr::extern_fun(|args, ctx| {
+        match eval_first(args, ctx).as_number() {
+            Some(n) => Expr::Float(n.exp()),
+            None => Expr::Nil
+        }
+    }, "exp", "Exponential e^x"));
+
+    // Utility
+    math_exports.insert(Expr::sym("sign"), Expr::extern_fun(|args, ctx| {
+        match eval_first(args, ctx).as_number() {
+            Some(n) => {
+                if n > 0.0 { Expr::Int(1) }
+                else if n < 0.0 { Expr::Int(-1) }
+                else { Expr::Int(0) }
+            },
+            None => Expr::Nil
+        }
+    }, "sign", "Sign of number (-1, 0, 1)"));
+
+    math_exports.insert(Expr::sym("clamp"), Expr::extern_fun(|args, ctx| {
+        if args.len() != 3 { return Expr::Nil; }
+        let val = crate::context::eval(args[0].clone(), ctx).as_number();
+        let min = crate::context::eval(args[1].clone(), ctx).as_number();
+        let max = crate::context::eval(args[2].clone(), ctx).as_number();
+        
+        match (val, min, max) {
+            (Some(v), Some(mn), Some(mx)) => {
+                if v < mn { Expr::Float(mn) }
+                else if v > mx { Expr::Float(mx) }
+                else { Expr::Float(v) }
+            },
+            _ => Expr::Nil
+        }
+    }, "clamp", "Clamp value between min and max"));
+    
+    // Degrees/Radians
+    math_exports.insert(Expr::sym("to_radians"), Expr::extern_fun(|args, ctx| {
+         match eval_first(args, ctx).as_number() {
+             Some(n) => Expr::Float(n.to_radians()),
+             None => Expr::Nil
+         }
+    }, "to_radians", "Convert degrees to radians"));
+
+    math_exports.insert(Expr::sym("to_degrees"), Expr::extern_fun(|args, ctx| {
+         match eval_first(args, ctx).as_number() {
+             Some(n) => Expr::Float(n.to_degrees()),
+             None => Expr::Nil
+         }
+    }, "to_degrees", "Convert radians to degrees"));
+
     // Random
+    // Randomness
     math_exports.insert(Expr::sym("rand"), Expr::extern_fun(|_args, _ctx| {
-        Expr::Float(rand::random())
-    }, "rand", "Random float 0.0..1.0"));
+        Expr::Float(rand::random::<f64>())
+    }, "rand", "Returns random float [0, 1)"));
+
+    math_exports.insert(Expr::sym("rand_int"), Expr::extern_fun(|args, ctx| {
+        if args.len() != 2 { return Expr::Nil; }
+        let min = crate::context::eval(args[0].clone(), ctx);
+        let max = crate::context::eval(args[1].clone(), ctx);
+        
+        match (min, max) {
+            (Expr::Int(min_val), Expr::Int(max_val)) => {
+                 use rand::Rng;
+                 if min_val >= max_val { return Expr::Int(min_val); }
+                 let val = rand::rng().random_range(min_val..max_val);
+                 Expr::Int(val)
+            }
+            _ => Expr::Nil
+        }
+    }, "rand_int", "Returns random integer [min, max)"));
 
     // Define 'Math' module in context
-    let math_mod = Expr::Ref(Arc::new(RwLock::new(Expr::Map(math_exports))));
-    ctx.define(Expr::sym("Math"), math_mod);
+    let mod_val = Expr::Ref(Arc::new(RwLock::new(Expr::Map(math_exports))));
+    ctx.define(Expr::sym("Math"), mod_val);
 }
 
 fn eval_first(args: &[Expr], ctx: &mut Context) -> Expr {

@@ -1,0 +1,22 @@
+(println "Estimating PI using Monte Carlo simulation...")
+
+(def total_points 100000)
+(def inside 0.0)
+(def i 0)
+
+(def start (Time.now))
+
+(while (< i total_points)
+    (def x (Math.rand))
+    (def y (Math.rand))
+    (def dist (+ (* x x) (* y y)))
+    (if (<= dist 1.0)
+        (def inside (+ inside 1))
+        0)
+    i = i + 1)
+
+(def pi (* 4.0 (/ inside total_points)))
+(def end (Time.now))
+
+(println (String.fmt "Estimated PI: {}" pi))
+(println (String.fmt "Time taken: {}s" (- end start)))

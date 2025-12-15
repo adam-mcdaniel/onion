@@ -13,6 +13,7 @@ pub mod time;
 pub mod os;
 pub mod io;
 pub mod reflect;
+pub mod game;
 
 pub fn stdlib() -> Context {
     let mut ctx = Context::new();
@@ -25,10 +26,8 @@ pub fn stdlib() -> Context {
     time::register(&mut ctx);
     os::register(&mut ctx);
     io::register(&mut ctx);
+    game::register(&mut ctx);
     
-    // ... rest of stdlib ...
-
-    // Define standard operators
     ctx.define_op(
         "+",
         OpInfo {
@@ -190,34 +189,20 @@ pub fn stdlib() -> Context {
                 let lhs = &args[0];
                 let rhs = &args[1];
 
-                // Check if LHS is a dot-access chain: (. obj key)
                 if let Expr::List(list) = lhs {
                     if !list.is_empty() {
                         if let Expr::Sym(op) = &list[0] {
                             if op.as_str() == "." && list.len() >= 3 {
-                                // It is a dot set!
-                                // LHS is: (. obj key) or (. obj key1 key2...)
-                                // We want to transform: (= (. A B) V) -> (. A B V)
-
-                                // Evaluate RHS first
-                                let val = eval(rhs.clone(), ctx);
-
-                                // Construct new list for dot-setter: (. obj key val)
-                                // We take the existing list elements and append val.
                                 let mut new_list = list.clone();
-                                new_list.push(val);
+                                new_list.push(rhs.clone());
 
-                                // Evaluate the new list as a function call
                                 return eval(Expr::List(new_list), ctx);
                             }
                         }
                     }
                 }
-                // Handle variable assignment (def alias behavior?)
-                // If LHS is a Symbol, maybe we update it?
                 else if let Expr::Sym(s) = lhs {
                     let val = eval(rhs.clone(), ctx);
-                    println!("DEBUG: Assigning {} = {:?} in scope", s, val);
                     ctx.define(Expr::Sym(s.clone()), val.clone());
                     return val;
                 }
@@ -341,6 +326,31 @@ pub fn stdlib() -> Context {
             },
             "/",
             "Divide numbers.",
+        ),
+    );
+
+    ctx.define_op(
+        "%",
+        OpInfo {
+            precedence: 20,
+            associativity: Assoc::Left,
+            unary: false,
+        },
+        Expr::extern_fun(
+            |args, ctx| {
+                if args.len() != 2 {
+                    return Expr::Nil;
+                }
+                let first = eval(args[0].clone(), ctx);
+                let second = eval(args[1].clone(), ctx);
+                match (first, second) {
+                    (Expr::Int(a), Expr::Int(b)) => Expr::Int(a % b),
+                    (Expr::Float(a), Expr::Float(b)) => Expr::Float(a % b),
+                    _ => Expr::Nil,
+                }
+            },
+            "%",
+            "Modulo operation.",
         ),
     );
 
@@ -536,8 +546,8 @@ pub fn stdlib() -> Context {
                 match eval(args[0].clone(), ctx) {
                     Expr::Int(n) => Expr::Int(-n),
                     Expr::Float(f) => Expr::Float(-f),
-                    Expr::Nil => Expr::Int(1), // !nil -> true (1)
-                    _ => Expr::Nil,            // !truthy -> false (nil)
+                    Expr::Nil => Expr::Int(1),
+                    _ => Expr::Nil,
                 }
             },
             "!",
@@ -624,7 +634,6 @@ pub fn stdlib() -> Context {
                 }
                 match crate::context::eval(args[0].clone(), ctx) {
                     Expr::List(l) => Expr::Int(l.len() as i64),
-                    Expr::Vector(v) => Expr::Int(v.len() as i64),
                     Expr::Str(s) => Expr::Int(s.len() as i64),
                     Expr::Map(m) => Expr::Int(m.len() as i64),
                     Expr::HashMap(m) => Expr::Int(m.len() as i64),
@@ -645,7 +654,6 @@ pub fn stdlib() -> Context {
                 }
                 match crate::context::eval(args[0].clone(), ctx) {
                     Expr::List(l) => l.first().cloned().unwrap_or(Expr::Nil),
-                    Expr::Vector(v) => v.first().cloned().unwrap_or(Expr::Nil),
                     _ => Expr::Nil,
                 }
             },
@@ -723,6 +731,57 @@ pub fn stdlib() -> Context {
     );
 
     ctx.define(
+        Expr::sym("while"),
+        Expr::extern_fun(
+            |args, ctx| {
+                let cond = &args[0];
+                let body = &args[1..];
+
+                let mut last = Expr::Nil;
+                loop {
+                    let cond_val = eval(cond.clone(), ctx);
+                    if matches!(cond_val, Expr::Nil | Expr::Int(0)) {
+                        break;
+                    }
+                    for expr in body {
+                        last = eval(expr.clone(), ctx);
+                    }
+                }
+                last
+            },
+            "while",
+            "While loop: (while cond body).",
+        ),
+    );
+
+    ctx.define(
+        Expr::sym("for"),
+        Expr::extern_fun(
+            |args, ctx| {
+                let var = &args[0];
+                let iterator = &args[1];
+                let body = &args[2..];
+
+                let mut last = Expr::Nil;
+                match iterator {
+                    Expr::List(lst) => {
+                        for item in lst {
+                            ctx.define(var.clone(), item.clone());
+                            for expr in body {
+                                last = eval(expr.clone(), ctx);
+                            }
+                        }
+                    }
+                    _ => return Expr::Nil,
+                }
+                last
+            },
+            "for",
+            "For loop: (for var iterator body).",
+        ),
+    );
+
+    ctx.define(
         Expr::sym("do"),
         Expr::extern_fun(
             |args, ctx| {
@@ -772,7 +831,6 @@ pub fn stdlib() -> Context {
         ),
     );
 
-    // Implement `new` operator for creating references
     ctx.define_op(
         "new",
         OpInfo {
@@ -793,7 +851,6 @@ pub fn stdlib() -> Context {
         ),
     );
 
-    // Implement `.` operator for property access and setting
     ctx.define_op(
         ".",
         OpInfo {
@@ -816,14 +873,12 @@ pub fn stdlib() -> Context {
                 };
 
                 let result = if args.len() == 2 {
-                    // Hybrid Lookup: Literal Symbol First, then Evaluated
                     let key_sym = if let Expr::Sym(s) = &args[1] {
                         Some(s.clone())
                     } else {
                         None
                     };
 
-                    // 1. Try Literal Lookup if symbol
                     if let Some(key) = &key_sym {
                         let guard = obj_ref.read().unwrap();
                         let found = match &*guard {
@@ -832,7 +887,6 @@ pub fn stdlib() -> Context {
                             _ => None,
                         };
                         if let Some(v) = found {
-                            // Method binding check
                             match v {
                                 Expr::Function {
                                     params,
@@ -854,7 +908,6 @@ pub fn stdlib() -> Context {
                         }
                     }
 
-                    // 2. Try Evaluated Lookup
                     let attr_expr = eval(args[1].clone(), ctx);
                     let val_opt = {
                         let guard = obj_ref.read().unwrap();
@@ -888,8 +941,11 @@ pub fn stdlib() -> Context {
                         Expr::Nil
                     }
                 } else {
-                    // SET
-                    let attr_expr = eval(args[1].clone(), ctx);
+                    let attr_expr = if let Expr::Sym(s) = &args[1] {
+                        Expr::Sym(s.clone())
+                    } else {
+                        eval(args[1].clone(), ctx)
+                    };
                     let val_expr = eval(args[2].clone(), ctx);
 
                     let mut guard = obj_ref.write().unwrap();
@@ -911,7 +967,84 @@ pub fn stdlib() -> Context {
         ),
     );
 
-    // Define (def symbol value)
+    ctx.define_op(
+        "?",
+        OpInfo {
+            precedence: 0,
+            associativity: Assoc::Left,
+            unary: false,
+        },
+        Expr::extern_fun(
+            |args, ctx| {
+                if args.len() < 2 || args.len() > 3 {
+                    return Expr::Nil;
+                }
+                let obj = eval(args[0].clone(), ctx);
+                let key = match &args[1] {
+                    Expr::Sym(s) => Expr::Sym(s.clone()),
+                    _ => eval(args[1].clone(), ctx),
+                };
+
+                if args.len() == 3 {
+                    let val = eval(args[2].clone(), ctx);
+                    if let Expr::Ref(r) = obj {
+                        let mut guard = r.write().unwrap();
+                        match &mut *guard {
+                            Expr::Map(m) => {
+                                m.insert(key, val.clone());
+                            }
+                            Expr::HashMap(m) => {
+                                m.insert(key, val.clone());
+                            }
+                            Expr::List(l) => {
+                                if let Expr::Int(i) = key {
+                                    if i >= 0 && (i as usize) < l.len() {
+                                        l[i as usize] = val.clone();
+                                    }
+                                }
+                            }
+                            _ => return Expr::Nil,
+                        }
+                        return val;
+                    }
+                    return Expr::Nil;
+                } else {
+                    match obj {
+                        Expr::List(l) => {
+                            if let Expr::Int(i) = key {
+                                if i >= 0 && (i as usize) < l.len() {
+                                    return l[i as usize].clone();
+                                }
+                            }
+                            Expr::Nil
+                        }
+                        Expr::Map(m) => m.get(&key).cloned().unwrap_or(Expr::Nil),
+                        Expr::HashMap(m) => m.get(&key).cloned().unwrap_or(Expr::Nil),
+                         Expr::Ref(r) => {
+                            let guard = r.read().unwrap();
+                            match &*guard {
+                                Expr::List(l) => {
+                                    if let Expr::Int(i) = key {
+                                        if i >= 0 && (i as usize) < l.len() {
+                                            return l[i as usize].clone();
+                                        }
+                                    }
+                                    Expr::Nil
+                                }
+                                Expr::Map(m) => m.get(&key).cloned().unwrap_or(Expr::Nil),
+                                Expr::HashMap(m) => m.get(&key).cloned().unwrap_or(Expr::Nil),
+                                _ => Expr::Nil
+                            }
+                        }
+                        _ => Expr::Nil,
+                    }
+                }
+            },
+            "?",
+            "Index access (collection ? key) or set (collection ? key value).",
+        ),
+    );
+
     ctx.define_op(
         "def",
         OpInfo {
@@ -935,20 +1068,24 @@ pub fn stdlib() -> Context {
     );
 
     // Define (fun (params) body)
-    ctx.define_op(
-        "fun",
-        OpInfo {
-            precedence: 0,
-            associativity: Assoc::Right,
-            unary: false,
-        },
+    ctx.define(
+        Expr::sym("fun"),
         Expr::extern_fun(
             |args, ctx| {
-                if args.len() != 2 {
+                if args.len() < 2 {
                     return Expr::Nil;
                 }
                 let params_expr = &args[0];
-                let body = &args[1];
+                
+                let body = if args.len() == 2 {
+                    Box::new(args[1].clone())
+                } else {
+                    let mut do_block = vec![Expr::sym("do")];
+                    for i in 1..args.len() {
+                        do_block.push(args[i].clone());
+                    }
+                    Box::new(Expr::List(do_block))
+                };
 
                 let params = match params_expr {
                     Expr::List(lst) => {
@@ -962,13 +1099,13 @@ pub fn stdlib() -> Context {
                         }
                         syms
                     }
-                    Expr::Sym(s) => vec![s.clone()], // Allow single param without parens? Standard lisp usually requires list.
+                    Expr::Sym(s) => vec![s.clone()], 
                     _ => return Expr::Nil,
                 };
 
                 Expr::Function {
                     params,
-                    body: Box::new(body.clone()),
+                    body,
                     env: ctx.clone(),
                     name: None,
                 }
@@ -991,8 +1128,6 @@ pub fn stdlib() -> Context {
                     _ => return Expr::Nil,
                 };
 
-                // Create new scope linked to current scope
-                // Create new scope linked to current scope
                 let module_scope = Scope {
                     vars: RwLock::new(HashMap::new()),
                     parent: Some(ctx.scope.clone()),
@@ -1003,15 +1138,12 @@ pub fn stdlib() -> Context {
                     scope: Arc::new(module_scope),
                 };
 
-                // Execute body in module context
                 let mut last = Expr::Nil;
                 for expr in &args[1..] {
                     last = eval(expr.clone(), &mut module_ctx);
                 }
 
-                // Collect definitions
                 let mut map = BTreeMap::new();
-                // We iterate module_ctx.scope.vars directly.
                 {
                     let vars = module_ctx.scope.vars.read().unwrap();
                     println!("Harvesting module {}: found {} vars", name_sym, vars.len());
@@ -1023,7 +1155,6 @@ pub fn stdlib() -> Context {
 
                 let mod_val = Expr::Ref(Arc::new(RwLock::new(Expr::Map(map))));
 
-                // Define module in OUTER context
                 ctx.define(Expr::Sym(name_sym), mod_val.clone());
 
                 mod_val
@@ -1033,17 +1164,16 @@ pub fn stdlib() -> Context {
         ),
     );
 
-    // Define (defun name (params) body)
     ctx.define(
         Expr::sym("defun"),
         Expr::extern_fun(
             |args, ctx| {
-                if args.len() != 3 {
+                if args.len() < 3 {
                     return Expr::Nil;
                 }
                 let name_expr = &args[0];
                 let params_expr = &args[1];
-                let body = &args[2];
+                let body_exprs = &args[2..];
 
                 let fn_name_sym = match name_expr {
                     Expr::Sym(s) => s.clone(),
@@ -1067,9 +1197,17 @@ pub fn stdlib() -> Context {
                     _ => return Expr::Nil,
                 };
 
+                let body = if body_exprs.len() == 1 {
+                    body_exprs[0].clone()
+                } else {
+                    let mut do_block = vec![Expr::sym("do")];
+                    do_block.extend(body_exprs.iter().cloned());
+                    Expr::List(do_block)
+                };
+
                 let func = Expr::Function {
                     params,
-                    body: Box::new(body.clone()),
+                    body: Box::new(body),
                     env: ctx.clone(),
                     name: Some(fn_name_sym.clone()),
                 };
@@ -1082,7 +1220,6 @@ pub fn stdlib() -> Context {
         ),
     );
 
-    // Define (struct Name (fields) (method1 ...) ...)
     ctx.define(
         Expr::sym("struct"),
         Expr::extern_fun(
@@ -1115,9 +1252,6 @@ pub fn stdlib() -> Context {
                     _ => return Expr::Nil,
                 };
 
-                // Parse methods
-                // Each method def is (Name (Params) Body...)
-                // We want to pre-create Expr::Function templates
                 let mut methods = BTreeMap::new();
                 for method_def in method_defs {
                     if let Expr::List(l) = method_def {
@@ -1148,21 +1282,13 @@ pub fn stdlib() -> Context {
                         let m_body = if l.len() == 3 {
                             Box::new(l[2].clone())
                         } else {
-                            // Implicit DO block if multiple expressions in body
                             Box::new(Expr::List(l[2..].iter().cloned().map(|e| e).collect()))
-                            // Wait, implicit DO is handled by DO macro usually, or body is just one expr.
-                            // Standard lisp `defun` usually allows multiple exprs as implied `do`.
-                            // My `defun` takes 3 args: name, params, body (single expr).
-                            // Let's stick to single expr body for now to match `defun`.
                         };
 
-                        // Create the function template.
-                        // IMPORTANT: The environment `env` should be the one where the struct is defined.
-                        // When the method is called, `self` will be bound.
                         let method_func = Expr::Function {
                             params: m_params,
                             body: m_body,
-                            env: ctx.clone(), // Capture definition context
+                            env: ctx.clone(),
                             name: Some(m_name.clone()),
                         };
                         methods.insert(m_name, method_func);
@@ -1171,7 +1297,6 @@ pub fn stdlib() -> Context {
                     }
                 }
 
-                // Create Constructor Function
                 let fields_clone = fields.clone();
                 let methods_clone = methods.clone();
 
@@ -1183,34 +1308,14 @@ pub fn stdlib() -> Context {
 
                         let mut obj_map = BTreeMap::new();
 
-                        // Bind fields
                         for (i, field) in fields_clone.iter().enumerate() {
                             obj_map.insert(field.clone().into(), eval(ctor_args[i].clone(), _ctx));
-                            // Wait, ctor_args are already evaluated? checking call site...
-                            // Yes, `eval` evaluates args before calling ExternFunc.
-                            // So `ctor_args[i]` is the value. We don't need `eval`.
-                            // BUT, `Expr::extern_fun` signature: `args: &[Expr], ctx: &mut Context`.
-                            // Who calls this? `eval` loop match Expr::List.
-                            // `eval(func_expr)` -> Extern.
-                            // `expr = f.call(&args, ctx)`.
-                            // The `args` passed to `call` are RAW expressions from the `Expr::List`.
-                            // `eval` creates the args vector: `let args = list[1..].to_vec();`.
-                            // It does NOT evaluate them!
-                            // Wait, let me check `eval` again.
                         }
-
-                        // Re-check eval logic relative to ExternFunc args.
-                        // In `eval`:
-                        // `match eval(func_expr, ctx) { Expr::Extern(f) => expr = f.call(&args, ctx) }`
-                        // `args` is `list[1..]`. Un-evaluated expressions.
-                        // So `+` iterates args and calls `eval(arg)`.
-                        // So here, we MUST call `eval(ctor_args[i])`. Correct.
 
                         for (i, field) in fields_clone.iter().enumerate() {
                             obj_map.insert(field.clone().into(), eval(ctor_args[i].clone(), _ctx));
                         }
 
-                        // Bind methods
                         for (m_name, m_func) in &methods_clone {
                             obj_map.insert(Expr::Sym(m_name.clone()), m_func.clone());
                         }
@@ -1261,7 +1366,7 @@ pub fn stdlib() -> Context {
                 let base = eval(args[0].clone(), ctx);
                 let exp = eval(args[1].clone(), ctx);
                 match (base, exp) {
-                    (Expr::Int(b), Expr::Int(e)) => Expr::Float((b as f64).powf(e as f64)), // Using powf for simplicity
+                    (Expr::Int(b), Expr::Int(e)) => Expr::Float((b as f64).powf(e as f64)),
                     (Expr::Float(b), Expr::Float(e)) => Expr::Float(b.powf(e)),
                     (Expr::Int(b), Expr::Float(e)) => Expr::Float((b as f64).powf(e)),
                     (Expr::Float(b), Expr::Int(e)) => Expr::Float(b.powf(e as f64)),
@@ -1273,8 +1378,6 @@ pub fn stdlib() -> Context {
         ),
     );
 
-    // --- List Extensions ---
-
     ctx.define(
         Expr::sym("length"),
         Expr::extern_fun(
@@ -1285,6 +1388,8 @@ pub fn stdlib() -> Context {
                 match eval(args[0].clone(), ctx) {
                     Expr::List(l) => Expr::Int(l.len() as i64),
                     Expr::Str(s) => Expr::Int(s.len() as i64),
+                    Expr::Map(m) => Expr::Int(m.len() as i64),
+                    Expr::HashMap(hm) => Expr::Int(hm.len() as i64),
                     _ => Expr::Int(0),
                 }
             },
@@ -1292,6 +1397,9 @@ pub fn stdlib() -> Context {
             "Return length of list or string.",
         ),
     );
+
+    let len_fn = ctx.resolve(&Expr::sym("length")).unwrap();
+    ctx.define(Expr::sym("len"), len_fn);
 
     ctx.define(
         Expr::sym("nth"),
@@ -1373,6 +1481,27 @@ pub fn stdlib() -> Context {
     ctx
 }
 
+pub fn call_anon_fn(func: &Expr, args: &[Expr], ctx: &mut Context) -> Expr {
+    match func {
+        Expr::Function { params: _, body: _, env: _, name: _ } => {
+            let mut call_list = Vec::new();
+            call_list.push(func.clone());
+            for arg in args {
+                call_list.push(Expr::Quoted(Box::new(arg.clone())));
+            }
+            crate::context::eval(Expr::List(call_list), ctx)
+        }
+        Expr::Extern(ext) => {
+             let mut call_args = Vec::new();
+             for arg in args {
+                 call_args.push(Expr::Quoted(Box::new(arg.clone())));
+             }
+            ext.call(&call_args, ctx)
+        }
+        _ => Expr::Nil
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1417,37 +1546,26 @@ mod tests {
     #[test]
     fn test_infix_notation() {
         let ctx = stdlib();
-        // Test precedence: * (20) > + (10)
-        let input_precedence = "1 + 2 * 3"; // 1 + 6 = 7
+        let input_precedence = "1 + 2 * 3";
         let (_, expr) = parse_expr(input_precedence, &ctx).unwrap();
         let evaluated = eval(expr, &mut ctx.clone());
         assert_eq!(evaluated, Expr::Int(7));
 
-        // Test associativity: - (Left)
-        let input_assoc_left = "10 - 5 - 2"; // (10 - 5) - 2 = 3
+        let input_assoc_left = "10 - 5 - 2";
         let (_, expr) = parse_expr(input_assoc_left, &ctx).unwrap();
         let evaluated = eval(expr, &mut ctx.clone());
         assert_eq!(evaluated, Expr::Int(3));
 
-        // Test parentheses grouping
-        let input_parens = "(1 + 2) * 3"; // 3 * 3 = 9
+        let input_parens = "(1 + 2) * 3";
         let (_, expr) = parse_expr(input_parens, &ctx).unwrap();
         let evaluated = eval(expr, &mut ctx.clone());
         assert_eq!(evaluated, Expr::Int(9));
 
-        // Test complex mixed operators
-        // 10 + 3 * 2 - 4 / 2
-        // 10 + 6 - 2 = 14
         let input_complex = "10 + 3 * 2 - 4 / 2";
         let (_, expr) = parse_expr(input_complex, &ctx).unwrap();
         let evaluated = eval(expr, &mut ctx.clone());
         assert_eq!(evaluated, Expr::Int(14));
 
-        // Test mixed precedence
-        // 1 + 2 > 2 -> 3 > 2 -> 1 (True)
-        // If precedence of > was higher (unlikely) or equal to +, it might be different.
-        // Actually > (5) < + (10). So + binds tighter.
-        // (1 + 2) > 2.
         let input_mixed = "1 + 2 > 2";
         let (_, expr) = parse_expr(input_mixed, &ctx).unwrap();
         let evaluated = eval(expr, &mut ctx.clone());
@@ -1464,7 +1582,6 @@ mod tests {
             (println \"Result:\" (add_infix 10 5))
             (add_infix 10 5)
         }";
-        // 10 + 5 * 2 = 10 + 10 = 20
         let (_, expr) = parse_expr(input, &ctx).unwrap();
         let evaluated = eval(expr, &mut ctx.clone());
         assert_eq!(evaluated, Expr::Int(20));
@@ -1477,7 +1594,6 @@ mod tests {
              }))
              (nested_infix 15)
         }";
-        // 15 > 10 -> true -> 15 - 5 = 10
         let (_, expr2) = parse_expr(input2, &ctx).unwrap();
         let evaluated2 = eval(expr2, &mut ctx.clone());
         assert_eq!(evaluated2, Expr::Int(10));
@@ -1529,7 +1645,6 @@ mod tests {
             Expr::List(res) => {
                 assert_eq!(res.len(), 3);
                 assert_eq!(res[0], Expr::Int(120));
-                // Stirling's approx for 5 is ~118.019
                 if let Expr::Float(f) = res[1] {
                     assert!((f - 118.019).abs() < 0.1);
                 } else {
@@ -1557,7 +1672,7 @@ mod tests {
 
     #[test]
     fn test_mergesort_large() {
-        let builder = std::thread::Builder::new().stack_size(32 * 1024 * 1024); // 32MB
+        let builder = std::thread::Builder::new().stack_size(32 * 1024 * 1024);
 
         let handler = builder
             .spawn(|| {
@@ -1640,10 +1755,6 @@ mod tests {
     #[test]
     fn test_oop_infix_nested() {
         let ctx = stdlib();
-        // Test infix dot usage:
-        // root.child.val  <-- (.(.root child ) val )
-        // Using + with it: root.child.val + 10
-        // Method: (obj.method) ()
         let input = "{
             (def point (new #[ 'x 10 'y 20 ]))
             (def rect (new #[ 
@@ -1670,11 +1781,6 @@ mod tests {
     #[test]
     fn test_oop_nested_mutation() {
         let ctx = stdlib();
-        // Demonstrating nested mutation:
-        // We have reference p.
-        // We have reference r which has 'origin pointing to p.
-        // We want to mutate p via r.
-        // (. (r.origin) 'x 999)
         let input = "{
             (def p (new #[ 'x 1 'y 2 ]))
             (def r (new #[ 'origin p ]))
@@ -1695,9 +1801,6 @@ mod tests {
 
     #[test]
     fn test_oop_assignment() {
-        // ... (existing test content kept as is for now, actually I need to append, not replace if I want to keep it)
-        // I will restart from view_file location.
-        // Actually, let's just add the test at the end.
         let ctx = stdlib();
         let input = "{
             (def p (new #[ 'x 0 'y 0 ]))
@@ -1835,14 +1938,12 @@ mod tests {
                     panic!("Expected float for PI, got {:?}", l[0]);
                 }
                 assert_eq!(l[1], Expr::Int(16));
-                // Distance (Float 5.0)
                 if let Expr::Float(d) = l[2] {
                     assert!((d - 5.0).abs() < 0.001);
                 } else {
                     panic!("Expected float for distance, got {:?}", l[2]);
                 }
 
-                // Add result (Point Ref)
                 if let Expr::Ref(_) = l[3] {
                     // Success
                 } else {

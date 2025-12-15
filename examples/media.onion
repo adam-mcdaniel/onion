@@ -1,0 +1,47 @@
+; Media Test Example
+
+(struct MediaTest 
+    (img snd x y)
+    
+    (load () {
+        (self.img = (Game.load_image "test.bmp"))
+        (self.snd = (Game.load_sound "test.wav"))
+        
+        (self.x = 100)
+        (self.y = 100)
+    })
+    
+    (update (dt) {
+        (if (Game.is_key_down "SPACE") {
+                (if (not (nil? self.snd)) (Game.play_sound self.snd))
+                (println "Playing sound!")
+        })
+        
+        ; Move image
+        (if (Game.is_key_down "RIGHT") (self.x = self.x + 2))
+        (if (Game.is_key_down "LEFT") (self.x = self.x - 2))
+    })
+    
+    (draw () {
+        (Game.clear 0x202020)
+        (Game.draw_text 10 10 "Media Test: Arrows to move, Space to beep" 0xFFFFFF)
+        (Game.draw_text 10 30 "Red Box below is a BMP image" 0xFF0000)
+        (Game.draw_image self.img self.x self.y)
+    })
+)
+
+(def instance (MediaTest 0 0 0 0))
+
+(defun update (dt) {
+    (instance.update dt)
+})
+
+(defun draw () {
+    (instance.draw)
+})
+
+(defun load () {
+    (instance.load)
+})
+
+(Game.run 800 600 "Media Test")

@@ -19,8 +19,6 @@ pub fn register(ctx: &mut Context) {
                 Err(_) => Expr::Nil
             },
            _ => {
-               // Return all env vars as Map if no arg or wrong arg?
-               // Let's stick to get.
                Expr::Nil
            }
         }
@@ -62,6 +60,27 @@ pub fn register(ctx: &mut Context) {
              Err(_) => Expr::Nil
          }
     }, "exec", "Execute command"));
+
+    os_exports.insert(Expr::sym("set_env"), Expr::extern_fun(|args, ctx| {
+        if args.len() != 2 { return Expr::Nil; }
+        let key = crate::context::eval(args[0].clone(), ctx);
+        let val = crate::context::eval(args[1].clone(), ctx);
+        
+        match (key, val) {
+            (Expr::Str(k), Expr::Str(v)) => {
+                unsafe { env::set_var(k, v); }
+                Expr::Int(1)
+            }
+            _ => Expr::Nil
+        }
+    }, "set_env", "Set environment variable"));
+
+    os_exports.insert(Expr::sym("cwd"), Expr::extern_fun(|_args, _ctx| {
+        match env::current_dir() {
+            Ok(p) => Expr::Str(p.to_string_lossy().to_string()),
+            Err(_) => Expr::Nil
+        }
+    }, "cwd", "Get current working directory"));
 
     let mod_val = Expr::Ref(Arc::new(RwLock::new(Expr::Map(os_exports))));
     ctx.define(Expr::sym("OS"), mod_val);

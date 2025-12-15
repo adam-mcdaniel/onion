@@ -28,6 +28,15 @@ pub fn register(ctx: &mut Context) {
         }
     }, "sleep", "Sleep for N milliseconds (int) or N seconds (float)"));
 
+    time_exports.insert(Expr::sym("format"), Expr::extern_fun(|args, ctx| {
+        match eval_first(args, ctx) {
+             Expr::Float(ts) => {
+                  Expr::Str(format!("{}", ts))
+             }
+             _ => Expr::Nil
+        }
+    }, "format", "Format timestamp (simple string)"));
+
     let mod_val = Expr::Ref(Arc::new(RwLock::new(Expr::Map(time_exports))));
     ctx.define(Expr::sym("Time"), mod_val);
 }

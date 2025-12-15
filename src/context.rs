@@ -36,8 +36,6 @@ pub struct Scope {
     pub parent: Option<Arc<Scope>>,
 }
 
-// Drop implementation can be derived or simplified if not doing manual iterative drop?
-// Manual drop is to avoid stack overflow on deep recursion.
 impl Drop for Scope {
     fn drop(&mut self) {
         let mut current = self.parent.take();
@@ -145,8 +143,6 @@ pub fn eval(mut expr: Expr, ctx: &mut Context) -> Expr {
                             );
                         }
 
-                        // Create new layered context
-                        // We do NOT clone the `vars` map. We pointer-link to `env.scope`.
                         let new_scope = Scope {
                             vars: RwLock::new(HashMap::new()),
                             parent: Some(env.scope.clone()),
@@ -159,13 +155,6 @@ pub fn eval(mut expr: Expr, ctx: &mut Context) -> Expr {
 
                         // If named, bind self to support recursion
                         if let Some(fn_name) = &name {
-                            // We construct the same function again.
-                            // Wait! This recreates the entire closure.
-                            // But `env` inside the closure MUST point to the *definition* environment.
-                            // Here we are in the *execution* environment.
-                            // `new_ctx` is the execution environment.
-                            // We bind the function name in `new_ctx` (shadowing if exists).
-
                             let func_clone = Expr::Function {
                                 params: params.clone(),
                                 body: body.clone(),
@@ -198,14 +187,6 @@ pub fn eval(mut expr: Expr, ctx: &mut Context) -> Expr {
                 }
                 expr = Expr::Map(evaluated_map);
             }
-            Expr::Vector(v) => {
-                let mut evaluated_vec = Vec::new();
-                for item in v {
-                    evaluated_vec.push(eval(item, ctx));
-                }
-                expr = Expr::Vector(evaluated_vec);
-            }
-
             Expr::HashMap(m) => {
                 let mut evaluated_map = HashMap::new();
                 for (k, v) in m {

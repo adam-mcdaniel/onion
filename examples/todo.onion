@@ -1,0 +1,35 @@
+(def todo_file "todo.txt")
+
+(defun show_todos ()
+    (if (IO.exists todo_file)
+        (do
+            (def content (IO.read_file todo_file))
+            (def items (String.lines content))
+            (println "--- TODO LIST ---")
+            (def idx 0)
+            (Collections.map (Collections.enumerate items) (fun (item)
+                idx = item ? 0
+                item = item ? 1
+                (println (String.fmt "{}. {}" (idx + 1) item))))
+            (println "-----------------"))
+        (println "No todos yet.")))
+
+(defun add_todo (item)
+    (IO.append_file todo_file (String.fmt "{}\n" item))
+    (println "Added."))
+
+(def args (OS.args))
+
+(if (< (len args) 3)
+    (do
+        (println "Usage: onion todo.onion [list|add] [item]")
+        (println "Example: onion todo.onion add \"Buy milk\""))
+    (do
+        (def cmd (Collections.get args 2))
+        (if (== cmd "list")
+            (show_todos)
+            (if (== cmd "add")
+                (if (> (len args) 3)
+                    (add_todo (Collections.get args 3))
+                    (println "Missing item."))
+                (println (String.fmt "Unknown command: {}" cmd))))))

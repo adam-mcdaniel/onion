@@ -64,8 +64,7 @@ fn test_reflect_module() {
     // Type.of
     assert_str("(Type.of 123)", "int");
     assert_str("(Type.of \"s\")", "string");
-    assert_str("(Type.of [])", "vector");
-    assert_str("(Type.of #[])", "map");
+    assert_str("(Type.of #[ ])", "map");
     assert_int("(Type.to_int \"123\")", 123);
     assert_str("(Type.to_str 123)", "123");
 }
@@ -80,14 +79,13 @@ fn assert_nil(code: &str) {
 #[test]
 fn test_collections_module() {
     // List ops
-    assert_str("(String.join (Collections.push [\"a\" \"b\"] \"c\") \",\")", "a,b,c");
-    assert_int("(len (Collections.push [] 1))", 1);
-    assert_int("(Collections.peek [1 2 3])", 3);
+    assert_str("(String.join (Collections.push '(\"a\" \"b\") \"c\") \",\")", "a,b,c");
+    assert_int("(len (Collections.push '() 1))", 1);
+    assert_int("(Collections.peek '(1 2 3))", 3);
     
     // Reverse
-    // We need to verify content.
     let code = "
-    (def l [1 2 3])
+    (def l '(1 2 3))
     (def r (Collections.reverse l))
     (first r)
     ";
@@ -95,7 +93,7 @@ fn test_collections_module() {
     
     // Sort
     let code = "
-    (def l [3 1 2])
+    (def l '(3 1 2))
     (def s (Collections.sort l))
     (first s)
     ";
@@ -108,39 +106,115 @@ fn test_collections_module() {
     ";
     assert_int(code, 2);
     
-    assert_nil("(Collections.contains_key #[ a 1 ] \"a\")"); // Key "a"?
-    // #[ a 1 ] -> Map { a: 1 }. Key is 'a (symbol) or "a" (string) if quoted?
-    // parse_hash_map matches `#[` then `parse_sequence`. `a` is identifier -> Symbol `a`.
-    // contains_key checks `Expr::Str("a")`.
-    // Symbol("a") != Str("a").
-    // So `contains_key` fails.
-    // Fix: `(Collections.contains_key #[ a 1 ] 'a)`.
-    // But we need 'a. `(quote a)`.
-    // OR we use strings as keys: `#[ "a" 1 ]`.
+    assert_nil("(Collections.contains_key #[ a 1 ] \"a\")");
     assert_int("(Collections.contains_key #[ \"a\" 1 ] \"a\")", 1);
     assert_int("(len #[ a 1 ])", 1);
 }
 
 #[test]
 fn test_global_len() {
-    assert_int("(len [1 2 3])", 3);
+    assert_int("(len '(1 2 3))", 3);
     assert_int("(len \"abc\")", 3);
+    assert_int("(len [ a 1 ])", 1);
     assert_int("(len #[ a 1 ])", 1);
 }
 
 #[test]
 fn test_collections_map_filter() {
     let code = "
-    (def l [1 2 3 4])
+    (def l '(1 2 3 4))
     (def res (Collections.map l (fun (x) (* x 2))))
     (first res)
     ";
     assert_int(code, 2); // 1*2 = 2
 
     let code = "
-    (def l [1 2 3 4])
+    (def l '(1 2 3 4))
     (def res (Collections.filter l (fun (x) (> x 2))))
     (len res)
     ";
     assert_int(code, 2); // 3, 4
+}
+
+#[test]
+fn test_collections_expanded() {
+    assert_int("(len (Collections.range 1 5))", 4);
+    assert_int("(first (Collections.range 1 5))", 1);
+    
+    assert_int("(len (Collections.range 1 10 2))", 5); 
+    
+    assert_int("(len (Collections.flatten '(1 (2 3) (4 (5)))))", 5);
+    
+    let code = "
+    (def l1 '(1 2 3))
+    (def l2 '(\"a\" \"b\"))
+    (len (Collections.zip l1 l2))
+    ";
+    assert_int(code, 2);
+    
+    // Dedup
+    assert_int("(len (Collections.dedup '(1 1 2 3 2)))", 3);
+    
+    // Find
+    assert_int("(Collections.find '(1 2 3 4) (fun (x) (> x 2)))", 3);
+    
+    // Any/All
+    assert_int("(Collections.any '(1 2 3) (fun (x) (> x 2)))", 1);
+    assert_nil("(Collections.any '(1 2 3) (fun (x) (> x 5)))");
+    
+    assert_int("(Collections.all '(1 2 3) (fun (x) (< x 5)))", 1);
+    assert_nil("(Collections.all '(1 2 3) (fun (x) (< x 2)))");
+}
+
+#[test]
+fn test_io_module_expanded() {
+    // Write file
+    assert_int("(IO.write_file \"test_io.txt\" \"content\")", 1);
+    // Check exists
+    assert_int("(IO.exists \"test_io.txt\")", 1);
+    // Check is_file
+    assert_int("(IO.is_file \"test_io.txt\")", 1);
+    // Remove
+    assert_int("(IO.remove_file \"test_io.txt\")", 1);
+    // Check not exists
+    assert_nil("(IO.exists \"test_io.txt\")");
+    
+    // Check is_dir
+    assert_int("(IO.is_dir \".\")", 1);
+}
+
+#[test]
+fn test_phase_2_extensions() {
+    assert_int("(Type.is_float (Math.rand))", 1);
+    let code = "
+    (def r (Math.rand))
+    (if (&& (>= r 0.0) (< r 1.0)) 1 0)
+    ";
+    let code = "
+    (def r (Math.rand))
+    (if (>= r 0.0) (if (< r 1.0) 1 0) 0)
+    ";
+    assert_int(code, 1);
+
+    let code = "
+    (def r (Math.rand_int 10 20))
+    (if (>= r 10) (if (< r 20) 1 0) 0)
+    ";
+    assert_int(code, 1);
+
+    assert_int("(OS.set_env \"TEST_VAR\" \"VALUE\")", 1);
+    assert_str("(OS.env \"TEST_VAR\")", "VALUE");
+    
+    let code = "
+    (def cwd (OS.cwd))
+    (if (> (len cwd) 0) 1 0)
+    ";
+    assert_int(code, 1);
+    
+    let code = "
+    (def t (Time.now))
+    (def s (Time.format t))
+    (if (> (len s) 0) 1 0)
+    ";
+    assert_int(code, 1);
 }

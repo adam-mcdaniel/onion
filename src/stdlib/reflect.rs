@@ -14,9 +14,8 @@ pub fn register(ctx: &mut Context) {
             Expr::Str(_) => Expr::Str("string".to_string()),
             Expr::Sym(_) => Expr::Str("symbol".to_string()),
             Expr::List(_) => Expr::Str("list".to_string()),
-            Expr::Vector(_) => Expr::Str("vector".to_string()),
             Expr::Map(_) | Expr::HashMap(_) => Expr::Str("map".to_string()),
-            Expr::Function{..} | Expr::Extern{..} => Expr::Str("fn".to_string()),
+            Expr::Function{..} | Expr::Extern{..} => Expr::Str("fun".to_string()),
             Expr::Nil => Expr::Str("nil".to_string()),
             Expr::Ref(_) => Expr::Str("ref".to_string()),
             Expr::Tagged { .. } => Expr::Str("tagged".to_string()),
@@ -53,13 +52,6 @@ pub fn register(ctx: &mut Context) {
         }
     }, "is_list", "Is list?"));
 
-    reflect_exports.insert(Expr::sym("is_vector"), Expr::extern_fun(|args, ctx| {
-        match eval_first(args, ctx) {
-            Expr::Vector(_) => Expr::Int(1),
-            _ => Expr::Nil
-        }
-    }, "is_vector", "Is vector?"));
-    
     reflect_exports.insert(Expr::sym("is_map"), Expr::extern_fun(|args, ctx| {
         match eval_first(args, ctx) {
             Expr::Map(_) | Expr::HashMap(_) => Expr::Int(1),

@@ -1,0 +1,11 @@
+(def l (list 10 20 30))
+(println "List:" l)
+(println "Index 0:" (l ? 0))
+(println "Index 1:" (? l 1))
+
+(def m (Collections.enumerate (list "a" "b")))
+(println "Enumerate:" m)
+(def first (m ? 0))
+(println "First pair:" first)
+(println "Idx:" (first ? 0))
+(println "Val:" (first ? 1))

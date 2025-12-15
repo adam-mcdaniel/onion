@@ -1,0 +1,2 @@
+(println "Hello from Onion!")
+(println (String.fmt "Current directory: {}" (OS.cwd)))

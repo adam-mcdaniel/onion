@@ -19,7 +19,6 @@ fn get_interned(s: &str) -> Arc<str> {
         existing
     } else {
         let mut table = SYMBOL_TABLE.write().unwrap();
-        // Double-check if it was inserted while we were waiting for the lock
         if let Some(existing) = table.get(s) {
             return existing.clone();
         }
@@ -30,22 +29,18 @@ fn get_interned(s: &str) -> Arc<str> {
 }
 
 impl Symbol {
-    /// Creates a new `Symbol` from the given string slice.
     pub fn new(s: &str) -> Self {
         Self(get_interned(s))
     }
 
-    /// Returns the string slice representation of the symbol.
     pub fn as_str(&self) -> &str {
         &self.0
     }
 
-    /// Returns the length of the symbol.
     pub fn len(&self) -> usize {
         self.0.len()
     }
 
-    /// Checks if the symbol is empty.
     pub fn is_empty(&self) -> bool {
         self.0.is_empty()
     }

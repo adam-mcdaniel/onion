@@ -1,0 +1,15 @@
+(println "Len test:" (len "abc"))
+(println "Greater test:" (> 1 0))
+(println "Greater test 2:" (> 0 1))
+(println "Greater test 3:" (> 3 0))
+
+(def item "foo")
+(if (> (len item) 0) (println "Len > 0") (println "Len <= 0"))
+
+(def t (list 0 "foo"))
+(def i (t ? 0))
+(def v (t ? 1))
+(println "Extracted:" i v)
+(if (> (len v) 0) (println "Extracted Len > 0") (println "Extracted Len <= 0"))
+
+(println (String.fmt "Fmt Test: {}. {}" 1 "Works"))

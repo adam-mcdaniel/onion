@@ -57,6 +57,45 @@ pub fn register(ctx: &mut Context) {
         }
     }, "append_file", "Append content to file"));
 
+    io_exports.insert(Expr::sym("read_line"), Expr::extern_fun(|_args, _ctx| {
+        let mut input = String::new();
+        match std::io::stdin().read_line(&mut input) {
+            Ok(_) => Expr::Str(input.trim_end().to_string()),
+            Err(_) => Expr::Nil
+        }
+    }, "read_line", "Read line from stdin"));
+
+    io_exports.insert(Expr::sym("exists"), Expr::extern_fun(|args, ctx| {
+        match eval_first(args, ctx) {
+            Expr::Str(p) => if std::path::Path::new(&p).exists() { Expr::Int(1) } else { Expr::Nil },
+            _ => Expr::Nil
+        }
+    }, "exists", "Check if path exists"));
+
+    io_exports.insert(Expr::sym("remove_file"), Expr::extern_fun(|args, ctx| {
+        match eval_first(args, ctx) {
+            Expr::Str(p) => match std::fs::remove_file(p) {
+                Ok(_) => Expr::Int(1),
+                Err(_) => Expr::Nil
+            },
+            _ => Expr::Nil
+        }
+    }, "remove_file", "Remove file"));
+
+    io_exports.insert(Expr::sym("is_dir"), Expr::extern_fun(|args, ctx| {
+        match eval_first(args, ctx) {
+            Expr::Str(p) => if std::path::Path::new(&p).is_dir() { Expr::Int(1) } else { Expr::Nil },
+            _ => Expr::Nil
+        }
+    }, "is_dir", "Check if path is directory"));
+
+    io_exports.insert(Expr::sym("is_file"), Expr::extern_fun(|args, ctx| {
+        match eval_first(args, ctx) {
+            Expr::Str(p) => if std::path::Path::new(&p).is_file() { Expr::Int(1) } else { Expr::Nil },
+            _ => Expr::Nil
+        }
+    }, "is_file", "Check if path is file"));
+
     let mod_val = Expr::Ref(Arc::new(RwLock::new(Expr::Map(io_exports))));
     ctx.define(Expr::sym("IO"), mod_val);
 }
