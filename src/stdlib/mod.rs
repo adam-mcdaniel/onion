@@ -6,18 +6,18 @@ use crate::context::Scope;
 use std::collections::{BTreeMap, HashMap};
 use std::sync::{Arc, RwLock};
 
-pub mod math;
-pub mod string;
 pub mod collections;
-pub mod time;
-pub mod os;
-pub mod io;
-pub mod reflect;
 pub mod game;
+pub mod io;
+pub mod math;
+pub mod os;
+pub mod reflect;
+pub mod string;
+pub mod time;
 
 pub fn stdlib() -> Context {
     let mut ctx = Context::new();
-    
+
     // Register Modules
     math::register(&mut ctx);
     string::register(&mut ctx);
@@ -27,7 +27,7 @@ pub fn stdlib() -> Context {
     os::register(&mut ctx);
     io::register(&mut ctx);
     game::register(&mut ctx);
-    
+
     ctx.define_op(
         "+",
         OpInfo {
@@ -200,8 +200,7 @@ pub fn stdlib() -> Context {
                             }
                         }
                     }
-                }
-                else if let Expr::Sym(s) = lhs {
+                } else if let Expr::Sym(s) = lhs {
                     let val = eval(rhs.clone(), ctx);
                     ctx.define(Expr::Sym(s.clone()), val.clone());
                     return val;
@@ -493,8 +492,12 @@ pub fn stdlib() -> Context {
                 match (left, right) {
                     (Expr::Int(a), Expr::Int(b)) => Expr::Int(if a <= b { 1 } else { 0 }),
                     (Expr::Float(a), Expr::Float(b)) => Expr::Int(if a <= b { 1 } else { 0 }),
-                    (Expr::Int(a), Expr::Float(b)) => Expr::Int(if (a as f64) <= b { 1 } else { 0 }),
-                    (Expr::Float(a), Expr::Int(b)) => Expr::Int(if a <= (b as f64) { 1 } else { 0 }),
+                    (Expr::Int(a), Expr::Float(b)) => {
+                        Expr::Int(if (a as f64) <= b { 1 } else { 0 })
+                    }
+                    (Expr::Float(a), Expr::Int(b)) => {
+                        Expr::Int(if a <= (b as f64) { 1 } else { 0 })
+                    }
                     _ => Expr::Nil,
                 }
             },
@@ -520,8 +523,12 @@ pub fn stdlib() -> Context {
                 match (left, right) {
                     (Expr::Int(a), Expr::Int(b)) => Expr::Int(if a >= b { 1 } else { 0 }),
                     (Expr::Float(a), Expr::Float(b)) => Expr::Int(if a >= b { 1 } else { 0 }),
-                    (Expr::Int(a), Expr::Float(b)) => Expr::Int(if (a as f64) >= b { 1 } else { 0 }),
-                    (Expr::Float(a), Expr::Int(b)) => Expr::Int(if a >= (b as f64) { 1 } else { 0 }),
+                    (Expr::Int(a), Expr::Float(b)) => {
+                        Expr::Int(if (a as f64) >= b { 1 } else { 0 })
+                    }
+                    (Expr::Float(a), Expr::Int(b)) => {
+                        Expr::Int(if a >= (b as f64) { 1 } else { 0 })
+                    }
                     _ => Expr::Nil,
                 }
             },
@@ -763,7 +770,7 @@ pub fn stdlib() -> Context {
                 let body = &args[2..];
 
                 let mut last = Expr::Nil;
-                match iterator {
+                match eval(iterator.clone(), ctx) {
                     Expr::List(lst) => {
                         for item in lst {
                             ctx.define(var.clone(), item.clone());
@@ -1020,7 +1027,7 @@ pub fn stdlib() -> Context {
                         }
                         Expr::Map(m) => m.get(&key).cloned().unwrap_or(Expr::Nil),
                         Expr::HashMap(m) => m.get(&key).cloned().unwrap_or(Expr::Nil),
-                         Expr::Ref(r) => {
+                        Expr::Ref(r) => {
                             let guard = r.read().unwrap();
                             match &*guard {
                                 Expr::List(l) => {
@@ -1033,7 +1040,7 @@ pub fn stdlib() -> Context {
                                 }
                                 Expr::Map(m) => m.get(&key).cloned().unwrap_or(Expr::Nil),
                                 Expr::HashMap(m) => m.get(&key).cloned().unwrap_or(Expr::Nil),
-                                _ => Expr::Nil
+                                _ => Expr::Nil,
                             }
                         }
                         _ => Expr::Nil,
@@ -1076,7 +1083,7 @@ pub fn stdlib() -> Context {
                     return Expr::Nil;
                 }
                 let params_expr = &args[0];
-                
+
                 let body = if args.len() == 2 {
                     Box::new(args[1].clone())
                 } else {
@@ -1099,7 +1106,7 @@ pub fn stdlib() -> Context {
                         }
                         syms
                     }
-                    Expr::Sym(s) => vec![s.clone()], 
+                    Expr::Sym(s) => vec![s.clone()],
                     _ => return Expr::Nil,
                 };
 
@@ -1483,7 +1490,12 @@ pub fn stdlib() -> Context {
 
 pub fn call_anon_fn(func: &Expr, args: &[Expr], ctx: &mut Context) -> Expr {
     match func {
-        Expr::Function { params: _, body: _, env: _, name: _ } => {
+        Expr::Function {
+            params: _,
+            body: _,
+            env: _,
+            name: _,
+        } => {
             let mut call_list = Vec::new();
             call_list.push(func.clone());
             for arg in args {
@@ -1492,13 +1504,13 @@ pub fn call_anon_fn(func: &Expr, args: &[Expr], ctx: &mut Context) -> Expr {
             crate::context::eval(Expr::List(call_list), ctx)
         }
         Expr::Extern(ext) => {
-             let mut call_args = Vec::new();
-             for arg in args {
-                 call_args.push(Expr::Quoted(Box::new(arg.clone())));
-             }
+            let mut call_args = Vec::new();
+            for arg in args {
+                call_args.push(Expr::Quoted(Box::new(arg.clone())));
+            }
             ext.call(&call_args, ctx)
         }
-        _ => Expr::Nil
+        _ => Expr::Nil,
     }
 }
 

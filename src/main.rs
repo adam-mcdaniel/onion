@@ -2,8 +2,8 @@ use clap::Parser;
 use onion::context::eval;
 use onion::parser::parse_expr;
 use onion::stdlib::stdlib;
-use rustyline::error::ReadlineError;
 use rustyline::DefaultEditor;
+use rustyline::error::ReadlineError;
 use std::fs;
 use std::process;
 
@@ -45,7 +45,7 @@ fn main() {
 
 fn run_eval(expr_str: &str, debug: bool) {
     let mut ctx = stdlib();
-    
+
     match parse_expr(expr_str, &ctx) {
         Ok((_, expr)) => {
             if debug {

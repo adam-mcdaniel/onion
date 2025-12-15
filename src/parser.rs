@@ -3,11 +3,11 @@ use crate::expr::Expr;
 use nom::{
     IResult,
     branch::alt,
-    bytes::complete::{is_not, tag, take_while1, escaped_transform},
+    bytes::complete::{escaped_transform, is_not, tag, take_while1},
     character::complete::{char, digit1, multispace0, none_of},
-    combinator::{map, map_res, recognize, value, opt},
+    combinator::{map, map_res, opt, recognize, value},
     multi::many0,
-    sequence::{delimited, tuple, preceded, pair},
+    sequence::{delimited, pair, preceded, tuple},
 };
 
 fn ws<'a, F, O, E>(inner: F) -> impl FnMut(&'a str) -> IResult<&'a str, O, E>
@@ -88,19 +88,16 @@ fn parse_hex(input: &str) -> IResult<&str, Expr> {
     map_res(
         ws(preceded(
             alt((tag("0x"), tag("0X"))),
-            take_while1(|c: char| c.is_ascii_hexdigit())
+            take_while1(|c: char| c.is_ascii_hexdigit()),
         )),
-        |out: &str| i64::from_str_radix(out, 16).map(Expr::Int)
+        |out: &str| i64::from_str_radix(out, 16).map(Expr::Int),
     )(input)
 }
 
 fn parse_int(input: &str) -> IResult<&str, Expr> {
     map_res(
-        ws(recognize(pair(
-            opt(alt((tag("-"), tag("+")))),
-            digit1
-        ))),
-        |out: &str| out.parse::<i64>().map(Expr::Int)
+        ws(recognize(pair(opt(alt((tag("-"), tag("+")))), digit1))),
+        |out: &str| out.parse::<i64>().map(Expr::Int),
     )(input)
 }
 
@@ -119,12 +116,13 @@ fn parse_str_lit(input: &str) -> IResult<&str, Expr> {
             value("\\", tag("\\")),
             value("\"", tag("\"")),
             value("\n", tag("n")),
-        ))
+        )),
     );
-    
-    map(ws(delimited(char('"'), build_string, char('"'))), |s: String| {
-        Expr::Str(s)
-    })(input)
+
+    map(
+        ws(delimited(char('"'), build_string, char('"'))),
+        |s: String| Expr::Str(s),
+    )(input)
 }
 
 fn parse_sym<'a>(input: &'a str, ctx: &Context) -> IResult<&'a str, Expr> {

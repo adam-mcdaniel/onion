@@ -2,40 +2,56 @@ use crate::context::Context;
 use crate::expr::Expr;
 use std::collections::BTreeMap;
 use std::sync::{Arc, RwLock};
-use std::time::{SystemTime, UNIX_EPOCH, Duration};
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 pub fn register(ctx: &mut Context) {
     let mut time_exports = BTreeMap::new();
 
-    time_exports.insert(Expr::sym("now"), Expr::extern_fun(|_args, _ctx| {
-        let start = SystemTime::now();
-        let since_the_epoch = start.duration_since(UNIX_EPOCH)
-            .expect("Time went backwards");
-        Expr::Float(since_the_epoch.as_secs_f64())
-    }, "now", "Current unix timestamp (seconds)"));
+    time_exports.insert(
+        Expr::sym("now"),
+        Expr::extern_fun(
+            |_args, _ctx| {
+                let start = SystemTime::now();
+                let since_the_epoch = start
+                    .duration_since(UNIX_EPOCH)
+                    .expect("Time went backwards");
+                Expr::Float(since_the_epoch.as_secs_f64())
+            },
+            "now",
+            "Current unix timestamp (seconds)",
+        ),
+    );
 
-    time_exports.insert(Expr::sym("sleep"), Expr::extern_fun(|args, ctx| {
-        match eval_first(args, ctx) {
-            Expr::Int(n) => {
-                std::thread::sleep(Duration::from_millis(n as u64));
-                Expr::Nil
-            }
-            Expr::Float(f) => {
-                 std::thread::sleep(Duration::from_secs_f64(f));
-                 Expr::Nil
-            }
-            _ => Expr::Nil
-        }
-    }, "sleep", "Sleep for N milliseconds (int) or N seconds (float)"));
+    time_exports.insert(
+        Expr::sym("sleep"),
+        Expr::extern_fun(
+            |args, ctx| match eval_first(args, ctx) {
+                Expr::Int(n) => {
+                    std::thread::sleep(Duration::from_millis(n as u64));
+                    Expr::Nil
+                }
+                Expr::Float(f) => {
+                    std::thread::sleep(Duration::from_secs_f64(f));
+                    Expr::Nil
+                }
+                _ => Expr::Nil,
+            },
+            "sleep",
+            "Sleep for N milliseconds (int) or N seconds (float)",
+        ),
+    );
 
-    time_exports.insert(Expr::sym("format"), Expr::extern_fun(|args, ctx| {
-        match eval_first(args, ctx) {
-             Expr::Float(ts) => {
-                  Expr::Str(format!("{}", ts))
-             }
-             _ => Expr::Nil
-        }
-    }, "format", "Format timestamp (simple string)"));
+    time_exports.insert(
+        Expr::sym("format"),
+        Expr::extern_fun(
+            |args, ctx| match eval_first(args, ctx) {
+                Expr::Float(ts) => Expr::Str(format!("{}", ts)),
+                _ => Expr::Nil,
+            },
+            "format",
+            "Format timestamp (simple string)",
+        ),
+    );
 
     let mod_val = Expr::Ref(Arc::new(RwLock::new(Expr::Map(time_exports))));
     ctx.define(Expr::sym("Time"), mod_val);

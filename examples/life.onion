@@ -7,6 +7,7 @@
         self.grid = (Collections.map (Collections.range 0 self.w * self.h) (fun (i) (Math.rand_int 0 2)))
         (println "Grid:" self.grid)
         self.time_since_update = 0
+        self.has_updated = 0
     })
     (get (x y) {
         (if x >= self.w {
@@ -33,10 +34,12 @@
         count
     })
     (update (dt) {
+        (println "FPS:" (Math.round (1 / dt)))
+
         self.time_since_update = self.time_since_update + dt
-        (if self.time_since_update >= 0.25 {
+        (if self.time_since_update >= 0.01 {
             self.time_since_update = 0
-            new_grid = (Collections.map (Collections.range 0 self.w * self.h) (fun (i) {
+            self.grid = (Collections.map (Collections.range 0 self.w * self.h) (fun (i) {
                 x = i % self.w
                 y = i / self.w
 
@@ -59,22 +62,23 @@
 
                 result
             }))
-            self.grid = new_grid
-            (println "Grid:" self.grid)
+            self.has_updated = 1
         })
     })
     
     (draw () {
-        (Game.draw_text 10 10 "Onion2D Life" 0xFF0000)
-        (Collections.map (Collections.range 0 self.w * self.h) (fun (i) {
-            x = i % self.w
-            y = i / self.w
-            (Game.rect {x * 20 + 100} {y * 20 + 100} 20 20 (if (self.get x y) == 1 {
-                0x00FFFF
-            } {
-                0x000000
-            }))
-        }))
+        (if self.has_updated {
+            (Game.clear 0x000000)
+            (Game.draw_text 10 10 "Onion2D Life" 0xFF0000)
+            (for i (Collections.range 0 self.w * self.h) {
+                x = i % self.w
+                y = i / self.w
+                (if (self.get x y) == 1 {
+                    (Game.rect {x * 8 + 40} {y * 8 + 40} 8 8 0x00FF00)
+                })
+            })
+            self.has_updated = 0
+        })
     })
 )
 
@@ -93,4 +97,4 @@
 })
 
 
-(Game.run 800 800 "Onion Life")
+(Game.run 320 320 "Onion Life")
