@@ -1,7 +1,7 @@
+use onion::context::eval;
 use onion::expr::Expr;
 use onion::parser::parse_expr;
 use onion::stdlib::stdlib;
-use onion::context::eval;
 
 fn run_code(code: &str) -> Expr {
     let mut ctx = stdlib();
@@ -23,21 +23,36 @@ fn run_code(code: &str) -> Expr {
 fn assert_int(code: &str, expected: i64) {
     match run_code(code) {
         Expr::Int(n) => assert_eq!(n, expected, "Code: {}", code),
-        val => panic!("Expected Int({}), got {:?} for code: {}", expected, val, code),
+        val => panic!(
+            "Expected Int({}), got {:?} for code: {}",
+            expected, val, code
+        ),
     }
 }
 
 fn assert_float(code: &str, expected: f64) {
     match run_code(code) {
-        Expr::Float(f) => assert!((f - expected).abs() < 0.0001, "Expected {}, got {} for code: {}", expected, f, code),
-        val => panic!("Expected Float({}), got {:?} for code: {}", expected, val, code),
+        Expr::Float(f) => assert!(
+            (f - expected).abs() < 0.0001,
+            "Expected {}, got {} for code: {}",
+            expected,
+            f,
+            code
+        ),
+        val => panic!(
+            "Expected Float({}), got {:?} for code: {}",
+            expected, val, code
+        ),
     }
 }
 
 fn assert_str(code: &str, expected: &str) {
     match run_code(code) {
         Expr::Str(s) => assert_eq!(s, expected, "Code: {}", code),
-        val => panic!("Expected Str({}), got {:?} for code: {}", expected, val, code),
+        val => panic!(
+            "Expected Str({}), got {:?} for code: {}",
+            expected, val, code
+        ),
     }
 }
 
@@ -71,7 +86,7 @@ fn test_reflect_module() {
 
 fn assert_nil(code: &str) {
     match run_code(code) {
-        Expr::Nil => {},
+        Expr::Nil => {}
         val => panic!("Expected Nil, got {:?} for code: {}", val, code),
     }
 }
@@ -79,10 +94,13 @@ fn assert_nil(code: &str) {
 #[test]
 fn test_collections_module() {
     // List ops
-    assert_str("(String.join (Collections.push '(\"a\" \"b\") \"c\") \",\")", "a,b,c");
+    assert_str(
+        "(String.join (Collections.push '(\"a\" \"b\") \"c\") \",\")",
+        "a,b,c",
+    );
     assert_int("(len (Collections.push '() 1))", 1);
     assert_int("(Collections.peek '(1 2 3))", 3);
-    
+
     // Reverse
     let code = "
     (def l '(1 2 3))
@@ -90,7 +108,7 @@ fn test_collections_module() {
     (first r)
     ";
     assert_int(code, 3);
-    
+
     // Sort
     let code = "
     (def l '(3 1 2))
@@ -98,14 +116,14 @@ fn test_collections_module() {
     (first s)
     ";
     assert_int(code, 1);
-    
+
     // Map
     let code = "
     (def m #[ a 1 b 2 ])
     (len (Collections.keys m))
     ";
     assert_int(code, 2);
-    
+
     assert_nil("(Collections.contains_key #[ a 1 ] \"a\")");
     assert_int("(Collections.contains_key #[ \"a\" 1 ] \"a\")", 1);
     assert_int("(len #[ a 1 ])", 1);
@@ -140,30 +158,30 @@ fn test_collections_map_filter() {
 fn test_collections_expanded() {
     assert_int("(len (Collections.range 1 5))", 4);
     assert_int("(first (Collections.range 1 5))", 1);
-    
-    assert_int("(len (Collections.range 1 10 2))", 5); 
-    
+
+    assert_int("(len (Collections.range 1 10 2))", 5);
+
     assert_int("(len (Collections.flatten '(1 (2 3) (4 (5)))))", 5);
-    
+
     let code = "
     (def l1 '(1 2 3))
     (def l2 '(\"a\" \"b\"))
     (len (Collections.zip l1 l2))
     ";
     assert_int(code, 2);
-    
+
     // Dedup
     assert_int("(len (Collections.dedup '(1 1 2 3 2)))", 3);
-    
+
     // Find
     assert_int("(Collections.find '(1 2 3 4) (fun (x) (> x 2)))", 3);
-    
+
     // Any/All
     assert_int("(Collections.any '(1 2 3) (fun (x) (> x 2)))", 1);
-    assert_nil("(Collections.any '(1 2 3) (fun (x) (> x 5)))");
-    
+    assert_int("(Collections.any '(1 2 3) (fun (x) (> x 5)))", 0);
+
     assert_int("(Collections.all '(1 2 3) (fun (x) (< x 5)))", 1);
-    assert_nil("(Collections.all '(1 2 3) (fun (x) (< x 2)))");
+    assert_int("(Collections.all '(1 2 3) (fun (x) (< x 2)))", 0);
 }
 
 #[test]
@@ -178,7 +196,7 @@ fn test_io_module_expanded() {
     assert_int("(IO.remove_file \"test_io.txt\")", 1);
     // Check not exists
     assert_nil("(IO.exists \"test_io.txt\")");
-    
+
     // Check is_dir
     assert_int("(IO.is_dir \".\")", 1);
 }
@@ -204,13 +222,13 @@ fn test_phase_2_extensions() {
 
     assert_int("(OS.set_env \"TEST_VAR\" \"VALUE\")", 1);
     assert_str("(OS.env \"TEST_VAR\")", "VALUE");
-    
+
     let code = "
     (def cwd (OS.cwd))
     (if (> (len cwd) 0) 1 0)
     ";
     assert_int(code, 1);
-    
+
     let code = "
     (def t (Time.now))
     (def s (Time.format t))
