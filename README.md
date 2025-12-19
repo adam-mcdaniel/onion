@@ -2,6 +2,34 @@
 
 Onion is a ***terrible*** LISP based programming language that smells bad and makes your eyes hurt, but its got layers!
 
+## Table Of Contents
+
+1. [Introduction](#introduction)
+2. [Onion's Design](#onions-design)
+    - [Design Goals](#design-goals)
+    - [Peeling The Onion](#peeling-the-onion)
+        - [A Familiar Example](#a-familiar-example)
+        - [Alien Features](#alien-features)
+            - [Operator Syntax](#operator-syntax)
+            - [Blocks](#blocks)
+            - [Tree Map & HashMap](#tree-map--hashmap)
+            - [Modules](#modules)
+            - [Pointers](#pointers)
+            - [Structures](#structures)
+    - [Drawbacks](#drawbacks)
+    - [Benefits](#benefits)
+3. [Onion2D](#onion2d)
+    - [Inspiration](#inspiration)
+    - [Demo](#demo)
+4. [Hold The Line!](#hold-the-line)
+5. [About the Author](#about-the-author)
+
+## Introduction
+
+I created Onion and Onion2D (its game engine) for the [LangJam GameJam](https://langjamgamejam.com/) in December 2025.
+The programming language is inspired by LISP, but with a ton of syntactic sugar and special forms to make it easier to read and write.
+The engine is inspired by the LÖVE framework for Lua, and provides a simple way to create 2D games with minimal boilerplate.
+
 ## Onion's Design
 
 ### Design Goals
@@ -304,3 +332,36 @@ This simple example just functions as a counter while holding down the UP/DOWN a
 
 ![Counter](assets/count.gif)
 
+## Hold The Line!
+
+Now, for the moment you've all been waiting for: the game I made for the LangJam GameJam using Onion2D!
+
+![Hold The Line!](assets/hold-the-line.gif)
+
+It's based on the UFO50 game [Avianos](https://ufo50.miraheze.org/wiki/Avianos), which is a 2D army management/strategy game where you
+raise units, construct buildings, and harvest resources to beat your opponent. I've spent countless hours on it, which lead me to make this.
+
+> [!NOTE]
+> Originally, I set out to create a factorio-like game using a cellular automaton. This was way too big in scope, and I got really frustrated trying to come up with all the rules and recipes in my buggy programming language. I threw it out and started on this instead!
+
+The motivation for this was that the game only had one major mechanic: the battle visualization. This acts as a random coinflip for casualties and wins/losses, while also providing a really sick graphical representation of the units going to war.
+
+Once I had that mechanic implemented, I essentially just needed to graft a fancy menu on top of it! That's pretty much how the game functions: it's a constrained menu that lets the player deploy units and start the battle function!
+
+I'm really pleased with this game design: I feel like it mirrors the engine in that it's very quick and dirty to implement, while still maintaining lots of beauty.
+Each unit type has a different kind of formation with varying sizes, and each unit type coheres, separates, and aligns differently. The simulation is performed with [Boids](https://en.wikipedia.org/wiki/Boids): each squadron has an enemy target, and each of the units within the squadron attempt to destroy the target. Each unit type forms a different formation with unique formation sizes: infantry has the largest squadron size of 8, shrinking down to 3 with artillery.
+
+## About the Author
+
+[I'm Adam McDaniel](https://adam-mcdaniel.github.io/), a software engineer and computer science PhD student at the University of Tennessee Knoxville. I'm passionate about programming languages, compilers, and formal methods. I'm a huge fan of Rust and functional programming, and I love building tools that help people write better software.
+
+Here's some interesting links for some of my other projects:
+
+### My Interesting Links
+
+|Website|
+|---|
+|[My main programming language🧑‍💻](https://adam-mcdaniel.net/sage-website)|
+|[My shell🐚](https://adam-mcdaniel.net/dune-website/)|
+|[My blog📝](https://adam-mcdaniel.net/blog)|
+|[My YouTube📽️ (compilers and music)](https://youtu.be/QdnxjYj1pS0?si=pwvegcPkEvqmqF8b)|
