@@ -1,4 +1,4 @@
-# LangJam GameJam!
+# Onion Programming Language & Onion2D Game Engine
 
 Onion is a ***terrible*** LISP based programming language that smells bad and makes your eyes hurt, but its got layers!
 
