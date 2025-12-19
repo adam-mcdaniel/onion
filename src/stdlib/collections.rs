@@ -345,7 +345,6 @@ pub fn register(ctx: &mut Context) {
                 }
                 let list = crate::context::eval(args[0].clone(), ctx);
                 let func = crate::context::eval(args[1].clone(), ctx);
-
                 match list {
                     Expr::List(v) => {
                         let mut res = Vec::new();
@@ -353,7 +352,7 @@ pub fn register(ctx: &mut Context) {
                             let mut call_args = vec![item.clone()];
                             let val = call_fn(&func, &mut call_args, ctx);
                             // Truthy check
-                            if val != Expr::Nil {
+                            if !matches!(val, Expr::Int(0) | Expr::Nil) {
                                 res.push(item);
                             }
                         }
@@ -409,7 +408,7 @@ pub fn register(ctx: &mut Context) {
                         for item in v {
                             let mut call_args = vec![item.clone()];
                             let val = call_fn(&func, &mut call_args, ctx);
-                            if val != Expr::Nil {
+                            if !matches!(val, Expr::Int(0) | Expr::Nil) {
                                 return item;
                             }
                         }
@@ -438,11 +437,11 @@ pub fn register(ctx: &mut Context) {
                         for item in v {
                             let mut call_args = vec![item.clone()];
                             let val = call_fn(&func, &mut call_args, ctx);
-                            if val != Expr::Nil {
+                            if !matches!(val, Expr::Int(0) | Expr::Nil) {
                                 return Expr::Int(1);
                             }
                         }
-                        Expr::Nil
+                        Expr::Int(0)
                     }
                     other => crate::stop!("any expected List, got {:?}", other),
                 }
@@ -467,8 +466,8 @@ pub fn register(ctx: &mut Context) {
                         for item in v {
                             let mut call_args = vec![item.clone()];
                             let val = call_fn(&func, &mut call_args, ctx);
-                            if val == Expr::Nil {
-                                return Expr::Nil;
+                            if matches!(val, Expr::Int(0) | Expr::Nil) {
+                                return Expr::Int(0);
                             }
                         }
                         Expr::Int(1)
