@@ -2,6 +2,8 @@
 
 Onion is a ***terrible*** LISP based programming language that smells bad and makes your eyes hurt, but its got layers!
 
+![Hold The Line!](assets/hold-the-line.gif)
+
 ## Table Of Contents
 
 1. [Introduction](#introduction)
