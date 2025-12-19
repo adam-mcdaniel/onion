@@ -21,6 +21,7 @@ Onion is a ***terrible*** LISP based programming language that smells bad and ma
 3. [Onion2D](#onion2d)
     - [Inspiration](#inspiration)
     - [Demo](#demo)
+    - [Introduction](#introduction-1)
 4. [Hold The Line!](#hold-the-line)
 5. [About the Author](#about-the-author)
 
