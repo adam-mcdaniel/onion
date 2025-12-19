@@ -3,6 +3,11 @@
         n
         (+ (fib (- n 1)) (fib (- n 2)))))
 
+(defun fib2 (n) 
+    (if n <= 1
+        n
+        (fib n - 1) + (fib n - 2)))
+
 (println "Calculating Fibonacci of 10...")
 (def start (Time.now))
 (def result (fib 10))

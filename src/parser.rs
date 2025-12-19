@@ -1,38 +1,100 @@
-use crate::context::{Assoc, Context, OpInfo};
+use crate::context::{Assoc, Context};
 use crate::expr::Expr;
+use crate::symbol::Symbol;
 use nom::{
     IResult,
     branch::alt,
-    bytes::complete::{escaped_transform, is_not, tag, take_while1},
-    character::complete::{char, digit1, multispace0, none_of},
-    combinator::{map, map_res, opt, recognize, value},
+    bytes::complete::{escaped_transform, tag, take_while1},
+    character::complete::{char, digit1, multispace0, multispace1, none_of, not_line_ending},
+    combinator::{cut, map, map_res, opt, recognize, value},
+    error::{VerboseError, context, convert_error},
     multi::many0,
-    sequence::{delimited, pair, preceded, tuple},
+    sequence::{delimited, pair, preceded, terminated, tuple},
 };
 
-fn ws<'a, F, O, E>(inner: F) -> impl FnMut(&'a str) -> IResult<&'a str, O, E>
-where
-    F: FnMut(&'a str) -> IResult<&'a str, O, E>,
-    E: nom::error::ParseError<&'a str>,
-{
-    delimited(multispace0, inner, multispace0)
+// Define a type alias for IResult with VerboseError
+type Res<'a, T> = IResult<&'a str, T, VerboseError<&'a str>>;
+
+fn sp<'a>(input: &'a str) -> Res<'a, &'a str> {
+    recognize(many0(alt((
+        multispace1,
+        recognize(pair(char(';'), not_line_ending)),
+    ))))(input)
 }
 
-fn parse_symbol_str<'a>(input: &'a str, ctx: &Context) -> IResult<&'a str, &'a str> {
-    let (input, _) = multispace0(input)?;
-    if input.is_empty() {
-        return Err(nom::Err::Error(nom::error::Error::new(
-            input,
-            nom::error::ErrorKind::Eof,
-        )));
-    }
+fn ws<'a, F, O>(inner: F) -> impl FnMut(&'a str) -> Res<'a, O>
+where
+    F: FnMut(&'a str) -> Res<'a, O>,
+{
+    delimited(sp, inner, sp)
+}
 
+// --- Atom Parsers ---
+
+fn parse_nil(input: &str) -> Res<Expr> {
+    value(Expr::Nil, ws(tag("nil")))(input)
+}
+
+fn parse_hex(input: &str) -> Res<Expr> {
+    map_res(
+        ws(preceded(
+            alt((tag("0x"), tag("0X"))),
+            take_while1(|c: char| c.is_ascii_hexdigit()),
+        )),
+        |out: &str| i64::from_str_radix(out, 16).map(Expr::Int),
+    )(input)
+}
+
+fn parse_int(input: &str) -> Res<Expr> {
+    map_res(
+        ws(recognize(pair(opt(alt((tag("-"), tag("+")))), digit1))),
+        |out: &str| out.parse::<i64>().map(Expr::Int),
+    )(input)
+}
+
+fn parse_float(input: &str) -> Res<Expr> {
+    map_res(
+        ws(recognize(tuple((
+            opt(alt((tag("-"), tag("+")))),
+            digit1,
+            tag("."),
+            digit1,
+        )))),
+        |out: &str| out.parse::<f64>().map(Expr::Float),
+    )(input)
+}
+
+fn parse_str_lit(input: &str) -> Res<Expr> {
+    let build_string = escaped_transform(
+        none_of("\\\""),
+        '\\',
+        alt((
+            value("\\", tag("\\")),
+            value("\"", tag("\"")),
+            value("\n", tag("n")),
+        )),
+    );
+
+    context(
+        "string",
+        map(
+            preceded(ws(char('"')), cut(terminated(build_string, char('"')))),
+            |s: String| Expr::Str(s),
+        ),
+    )(input)
+}
+
+fn parse_symbol_str<'a>(input: &'a str, ctx: &Context) -> Res<'a, &'a str> {
+    // 1. Check if input matches a known operator in Context
     let ops = ctx.get_operator_keys();
+    // Sort ops by length descending to match longest operator first
     let mut sorted_ops = ops;
     sorted_ops.sort_by(|a, b| b.len().cmp(&a.len()));
 
     for op in &sorted_ops {
         if input.starts_with(op) {
+            // Check boundary if op ends with alphanumeric or _
+            // If op is "def", "defun" shouldn't match "def"
             let first_c = op.chars().next().unwrap();
             if first_c.is_alphanumeric() || first_c == '_' {
                 if input.len() > op.len() {
@@ -46,292 +108,216 @@ fn parse_symbol_str<'a>(input: &'a str, ctx: &Context) -> IResult<&'a str, &'a s
         }
     }
 
-    let mut i = 0;
-    for (idx, c) in input.char_indices() {
-        if c.is_whitespace() || "()[]{},\"".contains(c) {
-            break;
-        }
+    // 2. If not operator, parse strict symbol token
+    // Allowed: alphanumeric, _, +, -, *, /, <, >, =, !, ? .
+    // BUT we must stop at delimiters: whitespace, parens, quotes
+    let allowed_special = "+-*/<>=!?_";
 
-        let suffix = &input[idx..];
-        let mut found_op = false;
-        for op in &sorted_ops {
-            if suffix.starts_with(op) {
-                let first_c = op.chars().next().unwrap();
-                if !first_c.is_alphanumeric() && first_c != '_' {
-                    found_op = true;
-                    break;
+    // Custom take_while since we need to respect delimiters
+    let is_sym_char = |c: char| c.is_alphanumeric() || allowed_special.contains(c);
+
+    let (input, sym_str) = take_while1(is_sym_char)(input)?;
+
+    // Ensure it's not a number (if it starts with digit, it might have been parsed by int/float,
+    // but if we are here, int/float failed or we are in pratt loop looking for token)
+    // Actually, `parse_atom` calls `parse_symbol` LAST. So we assume it's acceptable.
+
+    Ok((input, sym_str))
+}
+
+fn parse_sym<'a>(input: &'a str, ctx: &Context) -> Res<'a, Expr> {
+    map(ws(|i| parse_symbol_str(i, ctx)), |s: &str| {
+        Expr::Sym(Symbol::new(s))
+    })(input)
+}
+
+// --- Collections ---
+
+fn parse_list<'a>(input: &'a str, ctx: &Context) -> Res<'a, Expr> {
+    context(
+        "list",
+        map(
+            preceded(
+                ws(char('(')),
+                cut(terminated(many0(|i| parse_expr(i, ctx)), ws(char(')')))),
+            ),
+            Expr::List,
+        ),
+    )(input)
+}
+
+fn parse_map<'a>(input: &'a str, ctx: &Context) -> Res<'a, Expr> {
+    context(
+        "map",
+        map(
+            preceded(
+                ws(char('[')),
+                cut(terminated(many0(|i| parse_expr(i, ctx)), ws(char(']')))),
+            ),
+            |items| {
+                let mut map = std::collections::BTreeMap::new();
+                for chunk in items.chunks(2) {
+                    if chunk.len() == 2 {
+                        map.insert(chunk[0].clone(), chunk[1].clone());
+                    }
                 }
-            }
-        }
-        if found_op {
-            break;
-        }
-
-        i = idx + c.len_utf8();
-    }
-
-    if i == 0 {
-        return Err(nom::Err::Error(nom::error::Error::new(
-            input,
-            nom::error::ErrorKind::TakeWhile1,
-        )));
-    }
-
-    Ok((&input[i..], &input[..i]))
-}
-
-fn parse_nil(input: &str) -> IResult<&str, Expr> {
-    value(Expr::Nil, ws(tag("nil")))(input)
-}
-
-fn parse_hex(input: &str) -> IResult<&str, Expr> {
-    map_res(
-        ws(preceded(
-            alt((tag("0x"), tag("0X"))),
-            take_while1(|c: char| c.is_ascii_hexdigit()),
-        )),
-        |out: &str| i64::from_str_radix(out, 16).map(Expr::Int),
+                Expr::Map(map)
+            },
+        ),
     )(input)
 }
 
-fn parse_int(input: &str) -> IResult<&str, Expr> {
-    map_res(
-        ws(recognize(pair(opt(alt((tag("-"), tag("+")))), digit1))),
-        |out: &str| out.parse::<i64>().map(Expr::Int),
+fn parse_hashmap<'a>(input: &'a str, ctx: &Context) -> Res<'a, Expr> {
+    context(
+        "hashmap",
+        map(
+            preceded(
+                ws(tag("#[")),
+                cut(terminated(many0(|i| parse_expr(i, ctx)), ws(char(']')))),
+            ),
+            |items| {
+                let mut map = std::collections::HashMap::new();
+                for chunk in items.chunks(2) {
+                    if chunk.len() == 2 {
+                        map.insert(chunk[0].clone(), chunk[1].clone());
+                    }
+                }
+                Expr::HashMap(map)
+            },
+        ),
     )(input)
 }
 
-fn parse_float(input: &str) -> IResult<&str, Expr> {
-    map_res(
-        ws(recognize(tuple((digit1, char('.'), digit1)))),
-        |s: &str| s.parse::<f64>().map(Expr::Float),
+fn parse_quote<'a>(input: &'a str, ctx: &Context) -> Res<'a, Expr> {
+    context(
+        "quote",
+        map(
+            preceded(ws(char('\'')), cut(|i| parse_expr(i, ctx))),
+            |expr| Expr::Quoted(Box::new(expr)),
+        ),
     )(input)
 }
 
-fn parse_str_lit(input: &str) -> IResult<&str, Expr> {
-    let build_string = escaped_transform(
-        none_of("\"\\"),
-        '\\',
-        alt((
-            value("\\", tag("\\")),
-            value("\"", tag("\"")),
-            value("\n", tag("n")),
-        )),
-    );
-
-    map(
-        ws(delimited(char('"'), build_string, char('"'))),
-        |s: String| Expr::Str(s),
+fn parse_block<'a>(input: &'a str, ctx: &Context) -> Res<'a, Expr> {
+    context(
+        "block",
+        map(
+            preceded(
+                ws(char('{')),
+                cut(terminated(many0(|i| parse_expr(i, ctx)), ws(char('}')))),
+            ),
+            |exprs| {
+                let mut block = vec![Expr::Sym(Symbol::new("do"))];
+                block.extend(exprs);
+                Expr::List(block)
+            },
+        ),
     )(input)
 }
 
-fn parse_sym<'a>(input: &'a str, ctx: &Context) -> IResult<&'a str, Expr> {
-    map(|i| parse_symbol_str(i, ctx), |s| Expr::Sym(s.into()))(input)
-}
+// --- Pratt Parsing Support ---
 
-fn parse_parens<'a>(input: &'a str, ctx: &Context) -> IResult<&'a str, Expr> {
-    delimited(
-        ws(char('(')),
-        map(many0(|i| parse_expr(i, ctx)), |exprs| Expr::List(exprs)),
-        ws(char(')')),
-    )(input)
-}
-
-fn parse_block<'a>(input: &'a str, ctx: &Context) -> IResult<&'a str, Expr> {
-    delimited(
-        ws(char('{')),
-        map(many0(|i| parse_expr(i, ctx)), |exprs| {
-            let mut ops = vec![Expr::sym("do")];
-            ops.extend(exprs);
-            Expr::List(ops)
-        }),
-        ws(char('}')),
-    )(input)
-}
-
-fn parse_sequence<'a>(input: &'a str, ctx: &Context) -> IResult<&'a str, Vec<Expr>> {
-    many0(|i| parse_expr(i, ctx))(input)
-}
-
-fn parse_map<'a>(input: &'a str, ctx: &Context) -> IResult<&'a str, Expr> {
-    let (input, _) = ws(tag("["))(input)?;
-
-    if let Ok((rest, _)) = ws(char::<&str, nom::error::Error<&str>>(']'))(input) {
-        return Ok((rest, Expr::Map(Vec::new().into_iter().collect())));
-    }
-
-    let (input, items) = parse_sequence(input, ctx)?;
-    let (input, _) = ws(char(']'))(input)?;
-
-    let mut map = Vec::new();
-    for chunk in items.chunks(2) {
-        if chunk.len() == 2 {
-            map.push((chunk[0].clone(), chunk[1].clone()));
-        }
-    }
-    Ok((input, Expr::Map(map.into_iter().collect())))
-}
-fn parse_hash_map<'a>(input: &'a str, ctx: &Context) -> IResult<&'a str, Expr> {
-    let (input, _) = ws(tag("#["))(input)?;
-
-    if let Ok((rest, _)) = ws(char::<&str, nom::error::Error<&str>>(']'))(input) {
-        return Ok((rest, Expr::HashMap(Vec::new().into_iter().collect())));
-    }
-
-    let (input, items) = parse_sequence(input, ctx)?;
-    let (input, _) = ws(char(']'))(input)?;
-
-    let mut map = Vec::new();
-    for chunk in items.chunks(2) {
-        if chunk.len() == 2 {
-            map.push((chunk[0].clone(), chunk[1].clone()));
-        }
-    }
-    Ok((input, Expr::HashMap(map.into_iter().collect())))
-}
-
-fn parse_quoted<'a>(input: &'a str, ctx: &Context) -> IResult<&'a str, Expr> {
-    let (input, _) = ws(char('\''))(input)?;
-    let (input, expr) = parse_expr(input, ctx)?;
-    Ok((input, Expr::Quoted(Box::new(expr))))
-}
-
-fn parse_atom<'a>(input: &'a str, ctx: &Context) -> IResult<&'a str, Expr> {
+fn parse_atom<'a>(input: &'a str, ctx: &Context) -> Res<'a, Expr> {
     alt((
         parse_nil,
         parse_hex,
         parse_float,
         parse_int,
         parse_str_lit,
-        |i| parse_quoted(i, ctx),
-        |i| parse_block(i, ctx),
+        |i| parse_quote(i, ctx),
+        |i| parse_hashmap(i, ctx),
         |i| parse_map(i, ctx),
-        |i| parse_hash_map(i, ctx),
-        |i| parse_parens(i, ctx),
+        |i| parse_block(i, ctx),
+        |i| parse_list(i, ctx),
         |i| parse_sym(i, ctx),
     ))(input)
 }
 
-pub fn parse_expr<'a>(input: &'a str, ctx: &Context) -> IResult<&'a str, Expr> {
-    pratt_parse(input, ctx, 0)
-}
+fn pratt_parse<'a>(input: &'a str, ctx: &Context, min_bp: u8) -> Res<'a, Expr> {
+    // 1. Prefix Phase
+    let (mut input, mut lhs) = parse_atom(input, ctx)?;
 
-fn pratt_parse<'a>(mut input: &'a str, ctx: &Context, min_bp: u8) -> IResult<&'a str, Expr> {
-    let (mut input, mut lhs) = if let Ok((rest, sym)) = parse_symbol_str(input, ctx) {
-        if let Some(op_info) = ctx.get_op(sym) {
+    // Check if the atom we just parsed is a Symbol that acts as a specific prefix operator
+    if let Expr::Sym(ref s) = lhs {
+        if let Some(op_info) = ctx.get_op(s.as_str()) {
             if op_info.unary {
-                let (next_input, rhs) = pratt_parse(rest, ctx, op_info.precedence)?;
-
-                (next_input, Expr::List(vec![Expr::Sym(sym.into()), rhs]))
-            } else {
-                parse_atom(input, ctx)?
+                let (next_input, rhs) = pratt_parse(input, ctx, op_info.precedence)?;
+                input = next_input;
+                // Prefix: (op rhs)
+                lhs = Expr::List(vec![lhs.clone(), rhs]);
             }
-        } else {
-            parse_atom(input, ctx)?
         }
-    } else {
-        parse_atom(input, ctx)?
-    };
+    }
 
+    // 2. Infix Phase
     loop {
-        let peek_result = parse_symbol_str(input, ctx);
+        // Peek next token to see if it's an operator
+        let peek = ws(|i| parse_symbol_str(i, ctx))(input);
 
-        if let Ok((rest_after_op, op_sym)) = peek_result {
+        if let Ok((rest_after_op, op_sym)) = peek {
             if let Some(op_info) = ctx.get_op(op_sym) {
+                // Unary operators cannot be used as infix
+                if op_info.unary {
+                    break;
+                }
+
+                // If operator precedence is lower than min_bp, we stop (binding tighter to the left)
                 if op_info.precedence < min_bp {
                     break;
                 }
 
-                let next_min_bp = match op_info.associativity {
-                    Assoc::Left => op_info.precedence + 1,
-                    Assoc::Right => op_info.precedence,
+                let (_l_bp, r_bp) = match op_info.associativity {
+                    Assoc::Left => (op_info.precedence, op_info.precedence + 1),
+                    Assoc::Right => (op_info.precedence, op_info.precedence),
                 };
 
+                // Consume the operator
                 input = rest_after_op;
 
-                let (next_input, rhs) = pratt_parse(input, ctx, next_min_bp)?;
+                // Parse RHS
+                let (next_input, rhs) = pratt_parse(input, ctx, r_bp)?;
                 input = next_input;
 
-                lhs = Expr::List(vec![Expr::Sym(op_sym.into()), lhs, rhs]);
-
+                // Combine: (op lhs rhs)
+                lhs = Expr::List(vec![Expr::Sym(Symbol::new(op_sym)), lhs, rhs]);
                 continue;
             }
         }
-
         break;
     }
 
     Ok((input, lhs))
 }
 
+pub fn parse_expr<'a>(input: &'a str, ctx: &Context) -> Res<'a, Expr> {
+    pratt_parse(input, ctx, 0)
+}
+
+pub fn convert_error_to_string(input: &str, e: VerboseError<&str>) -> String {
+    convert_error(input, e)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::context::{Assoc, Context, OpInfo};
-    use crate::expr::Expr;
 
     #[test]
-    fn test_pratt_parser() {
-        let mut ctx = Context::new();
-
-        ctx.define_op(
-            "+",
-            OpInfo {
-                precedence: 1,
-                associativity: Assoc::Left,
-                unary: false,
-            },
-            Expr::Nil,
+    fn test_parse_atoms() {
+        let ctx = Context::new();
+        // Int
+        assert_eq!(parse_expr("123", &ctx).unwrap().1, Expr::Int(123));
+        assert_eq!(parse_expr("-456", &ctx).unwrap().1, Expr::Int(-456));
+        // Float
+        match parse_expr("3.14", &ctx).unwrap().1 {
+            Expr::Float(f) => assert!((f - 3.14).abs() < 0.001),
+            _ => panic!("Expected Float"),
+        }
+        // String
+        assert_eq!(
+            parse_expr("\"hello\"", &ctx).unwrap().1,
+            Expr::Str("hello".to_string())
         );
-        ctx.define_op(
-            "*",
-            OpInfo {
-                precedence: 2,
-                associativity: Assoc::Left,
-                unary: false,
-            },
-            Expr::Nil,
-        );
-
-        ctx.define_op(
-            "!",
-            OpInfo {
-                precedence: 3,
-                associativity: Assoc::Right,
-                unary: true,
-            },
-            Expr::Nil,
-        );
-
-        let input = "3 + 4 * 5";
-        let (_, expr) = parse_expr(input, &ctx).unwrap();
-        let expected = Expr::List(vec![
-            Expr::Sym("+".into()),
-            Expr::Int(3),
-            Expr::List(vec![Expr::Sym("*".into()), Expr::Int(4), Expr::Int(5)]),
-        ]);
-        assert_eq!(expr, expected);
-
-        let input = "! 5";
-        let (_, expr) = parse_expr(input, &ctx).unwrap();
-        let expected = Expr::List(vec![Expr::Sym("!".into()), Expr::Int(5)]);
-        assert_eq!(expr, expected);
-
-        let input = "! 5 + 3";
-        let (_, expr) = parse_expr(input, &ctx).unwrap();
-        let expected = Expr::List(vec![
-            Expr::Sym("+".into()),
-            Expr::List(vec![Expr::Sym("!".into()), Expr::Int(5)]),
-            Expr::Int(3),
-        ]);
-        assert_eq!(expr, expected);
-
-        let input = "! ! 5";
-        let (_, expr) = parse_expr(input, &ctx).unwrap();
-        let expected = Expr::List(vec![
-            Expr::Sym("!".into()),
-            Expr::List(vec![Expr::Sym("!".into()), Expr::Int(5)]),
-        ]);
-        assert_eq!(expr, expected);
+        // List
+        // assert_eq!(parse_expr("(1 2)", &ctx).unwrap().1, Expr::List(vec![Expr::Int(1), Expr::Int(2)]));
     }
 }

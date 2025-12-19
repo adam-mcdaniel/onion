@@ -1,0 +1,37 @@
+
+(println "--- Debugging List & If ---")
+
+(println "Test 1: Simple List Creation")
+l1 = (list 1 5)
+(println "List l1:" l1)
+(println "nth 0:" (nth 0 l1))
+(println "nth 1:" (nth 1 l1))
+
+(println "\nTest 2: If Expression Returning List")
+res = (if 1 < 2 {
+    (list 10 50)
+} {
+    (list 0 0)
+})
+(println "Result from if:" res)
+(println "nth 0 of res:" (nth 0 res))
+(println "nth 1 of res:" (nth 1 res))
+
+(println "\nTest 3: Nested If")
+val = 5
+nested = (if val < 2 {
+    (list 1 1)
+} {
+    (if val > 3 {
+        (list 2 2)
+    } {
+        (list 3 3)
+    })
+})
+(println "Nested result:" nested)
+(println "nth 0 nested:" (nth 0 nested))
+
+(println "\nTest 4: Struct Field Assignment")
+(struct Point (x y))
+p = (Point (nth 0 l1) (nth 1 l1))
+(println "Point:" p)

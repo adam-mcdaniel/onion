@@ -1,0 +1,4 @@
+(println "Testing strict collections...")
+;; Test 1: Map on non-list
+(println "Test 1: Map on non-list (should crash)")
+(Collections.map 1 (fun (x) x))

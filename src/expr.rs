@@ -5,7 +5,7 @@ use std::sync::{Arc, RwLock};
 
 #[derive(Clone)]
 pub struct ExternFunc {
-    func: Arc<dyn Fn(&[Expr], &mut Context) -> Expr + Send + Sync>,
+    func: Arc<dyn Fn(&mut [Expr], &mut Context) -> Expr + Send + Sync>,
     short_desc: String,
     long_desc: String,
 }
@@ -13,7 +13,7 @@ pub struct ExternFunc {
 impl ExternFunc {
     pub fn new<F, S1, S2>(func: F, short_desc: S1, long_desc: S2) -> Self
     where
-        F: Fn(&[Expr], &mut Context) -> Expr + Send + Sync + 'static,
+        F: Fn(&mut [Expr], &mut Context) -> Expr + Send + Sync + 'static,
         S1: Into<String>,
         S2: Into<String>,
     {
@@ -24,7 +24,7 @@ impl ExternFunc {
         }
     }
 
-    pub fn call(&self, args: &[Expr], ctx: &mut Context) -> Expr {
+    pub fn call(&self, args: &mut [Expr], ctx: &mut Context) -> Expr {
         (self.func)(args, ctx)
     }
 
@@ -74,7 +74,7 @@ impl Ord for ExternFunc {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub enum Expr {
     Nil,
     Int(i64),
@@ -104,7 +104,7 @@ impl Eq for Expr {}
 impl Expr {
     pub fn extern_fun<F, S1, S2>(func: F, short_desc: S1, long_desc: S2) -> Self
     where
-        F: Fn(&[Expr], &mut Context) -> Expr + Send + Sync + 'static,
+        F: Fn(&mut [Expr], &mut Context) -> Expr + Send + Sync + 'static,
         S1: Into<String>,
         S2: Into<String>,
     {
@@ -148,18 +148,28 @@ impl Expr {
     }
 
     pub fn as_int(&self) -> Option<i64> {
-        if let Expr::Int(i) = self {
-            Some(*i)
-        } else {
-            None
+        // if let Expr::Int(i) = self {
+        //     Some(*i)
+        // } else {
+        //     None
+        // }
+        match self {
+            Expr::Int(i) => Some(*i),
+            Expr::Float(f) => Some(*f as i64),
+            _ => None,
         }
     }
 
     pub fn as_float(&self) -> Option<f64> {
-        if let Expr::Float(f) = self {
-            Some(*f)
-        } else {
-            None
+        // if let Expr::Float(f) = self {
+        //     Some(*f)
+        // } else {
+        //     None
+        // }
+        match self {
+            Expr::Float(f) => Some(*f),
+            Expr::Int(i) => Some(*i as f64),
+            _ => None,
         }
     }
 
@@ -450,13 +460,86 @@ impl std::fmt::Display for Expr {
                     if !first {
                         write!(f, " ")?;
                     }
+                    write!(f, "{:?}", item)?;
+                    first = false;
+                }
+                write!(f, ")")
+            }
+            Expr::Map(m) => {
+                write!(f, "[")?;
+                let mut first = true;
+                for (k, v) in m {
+                    if !first {
+                        write!(f, " ")?;
+                    }
+                    write!(f, "{:?} {:?}", k, v)?;
+                    first = false;
+                }
+                write!(f, "]")
+            }
+            Expr::HashMap(hm) => {
+                write!(f, "#[")?;
+                let mut first = true;
+                for (k, v) in hm {
+                    if !first {
+                        write!(f, " ")?;
+                    }
+                    write!(f, "{:?} {:?}", k, v)?;
+                    first = false;
+                }
+                write!(f, "]")
+            }
+            Expr::Tagged { tag, value } => {
+                write!(f, "{} {}", tag, value)
+            }
+            Expr::Extern(ext) => {
+                write!(f, "<extern: {}>", ext.short_desc())
+            }
+            Expr::Function { params, body, .. } => {
+                write!(f, "<function params: (")?;
+                let mut first = true;
+                for param in params {
+                    if !first {
+                        write!(f, " ")?;
+                    }
+                    write!(f, "{:?}", param)?;
+                    first = false;
+                }
+                write!(f, ") body: {:?}>", body)
+            }
+            Expr::Quoted(expr) => {
+                write!(f, "'{:?}", expr)
+            }
+            Expr::Ref(inner) => {
+                // Try printing inner
+                write!(f, "{:?}", inner.read().unwrap())
+            }
+        }
+    }
+}
+
+impl std::fmt::Debug for Expr {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Expr::Nil => write!(f, "nil"),
+            Expr::Int(i) => write!(f, "{}", i),
+            Expr::Float(fl) => write!(f, "{}", fl),
+            Expr::Str(s) => write!(f, "{:?}", s),
+            Expr::Sym(s) => write!(f, "{}", s),
+            Expr::List(l) => {
+                write!(f, "(")?;
+                let mut first = true;
+                for item in l {
+                    if !first {
+                        write!(f, " ")?;
+                    }
                     write!(f, "{}", item)?;
                     first = false;
                 }
                 write!(f, ")")
             }
             Expr::Map(m) => {
-                write!(f, "[")?; // Map uses #[ now? Or keep [ for Map?
+                write!(f, "[")?;
                 let mut first = true;
                 for (k, v) in m {
                     if !first {

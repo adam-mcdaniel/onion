@@ -1,42 +1,23 @@
-
-
-
 (struct Pong (p1_score p2_score p1_y p2_y p_h p_w ball_x ball_y ball_dx ball_dy ball_size width height)
     (load () {
         (println "Pong Started! Controls: W/S for P1, Up/Down for P2.")
     })
     (update (dt) {
-        (if (Game.is_key_down "W") {
-            self.p1_y = self.p1_y - 5
-        })
-        (if (Game.is_key_down "S") {
-            self.p1_y = self.p1_y + 5
-        })
+        (if (Game.is_key_down "W") self.p1_y = self.p1_y - 5)
+        (if (Game.is_key_down "S") self.p1_y = self.p1_y + 5)
 
-        (if (Game.is_key_down "UP") {
-            self.p2_y = self.p2_y - 5
-        })
-        (if (Game.is_key_down "DOWN") {
-            self.p2_y = self.p2_y + 5
-        })
+        (if (Game.is_key_down "UP") self.p2_y = self.p2_y - 5)
+        (if (Game.is_key_down "DOWN") self.p2_y = self.p2_y + 5)
 
         self.ball_x = self.ball_x + self.ball_dx
         self.ball_y = self.ball_y + self.ball_dy
 
-        (if self.ball_y < 0 {
-            self.ball_dy = ! self.ball_dy
-        })
-        (if self.ball_y > self.height {
-            self.ball_dy = ! self.ball_dy
-        })
+        (if self.ball_y < 0 self.ball_dy = ! self.ball_dy)
+        (if self.ball_y > self.height self.ball_dy = ! self.ball_dy)
 
-        (if (and self.ball_x < self.p_w + 50 self.ball_y > self.p1_y self.ball_y < self.p1_y + self.p_h) {
-            self.ball_dx = ! self.ball_dx
-        })
+        (if self.ball_x < self.p_w + 50 and self.ball_y > self.p1_y and self.ball_y < self.p1_y + self.p_h {self.ball_dx = ! self.ball_dx})
 
-        (if (and self.ball_x > self.width - self.p_w - 50 self.ball_y > self.p2_y self.ball_y < self.p2_y + self.p_h) {
-            self.ball_dx = ! self.ball_dx
-        })
+        (if self.ball_x > self.width - self.p_w - 50 and self.ball_y > self.p2_y and self.ball_y < self.p2_y + self.p_h {self.ball_dx = ! self.ball_dx})
 
         (if self.ball_x < 0 {
             self.ball_x = 400

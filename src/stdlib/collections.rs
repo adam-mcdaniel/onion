@@ -1,4 +1,4 @@
-use crate::context::Context;
+use crate::context::{Context, eval};
 use crate::expr::Expr;
 use std::collections::BTreeMap;
 use std::sync::{Arc, RwLock};
@@ -12,7 +12,7 @@ pub fn register(ctx: &mut Context) {
         Expr::extern_fun(
             |args, ctx| {
                 if args.len() != 2 {
-                    return Expr::Nil;
+                    crate::stop!("push requires 2 arguments, got {}", args.len());
                 }
                 let list = crate::context::eval(args[0].clone(), ctx);
                 let val = crate::context::eval(args[1].clone(), ctx);
@@ -22,7 +22,7 @@ pub fn register(ctx: &mut Context) {
                         v.push(val);
                         Expr::List(v)
                     }
-                    _ => Expr::Nil,
+                    other => crate::stop!("push expected List as first argument, got {:?}", other),
                 }
             },
             "push",
@@ -38,7 +38,7 @@ pub fn register(ctx: &mut Context) {
                     v.pop();
                     Expr::List(v)
                 }
-                _ => Expr::Nil,
+                other => crate::stop!("pop expected List, got {:?}", other),
             },
             "pop",
             "Remove last element",
@@ -50,7 +50,7 @@ pub fn register(ctx: &mut Context) {
         Expr::extern_fun(
             |args, ctx| match eval_first(args, ctx) {
                 Expr::List(v) => v.last().cloned().unwrap_or(Expr::Nil),
-                _ => Expr::Nil,
+                other => crate::stop!("peek expected List, got {:?}", other),
             },
             "peek",
             "Get last element",
@@ -65,7 +65,7 @@ pub fn register(ctx: &mut Context) {
                     v.reverse();
                     Expr::List(v)
                 }
-                _ => Expr::Nil,
+                other => crate::stop!("reverse expected List, got {:?}", other),
             },
             "reverse",
             "Reverse list",
@@ -77,7 +77,7 @@ pub fn register(ctx: &mut Context) {
         Expr::extern_fun(
             |args, ctx| {
                 if args.len() < 1 {
-                    return Expr::Nil;
+                    crate::stop!("sort requires at least 1 argument");
                 }
                 let list_expr = crate::context::eval(args[0].clone(), ctx);
 
@@ -86,7 +86,7 @@ pub fn register(ctx: &mut Context) {
                         v.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
                         Expr::List(v)
                     }
-                    _ => Expr::Nil,
+                    other => crate::stop!("sort expected List, got {:?}", other),
                 }
             },
             "sort",
@@ -99,7 +99,7 @@ pub fn register(ctx: &mut Context) {
         Expr::extern_fun(
             |args, ctx| {
                 if args.len() < 2 {
-                    return Expr::Nil;
+                    crate::stop!("range requires at least 2 arguments (start, end, [step])");
                 }
                 let start = crate::context::eval(args[0].clone(), ctx);
                 let end = crate::context::eval(args[1].clone(), ctx);
@@ -113,7 +113,7 @@ pub fn register(ctx: &mut Context) {
                     (Expr::Int(s), Expr::Int(e), Expr::Int(st)) => {
                         let mut res = Vec::new();
                         if st == 0 {
-                            return Expr::Nil;
+                            crate::stop!("range step cannot be 0");
                         }
                         let mut i = s;
                         if st > 0 {
@@ -129,7 +129,12 @@ pub fn register(ctx: &mut Context) {
                         }
                         Expr::List(res)
                     }
-                    _ => Expr::Nil,
+                    (s, e, st) => crate::stop!(
+                        "range arguments must be integers, got start={:?}, end={:?}, step={:?}",
+                        s,
+                        e,
+                        st
+                    ),
                 }
             },
             "range",
@@ -142,7 +147,7 @@ pub fn register(ctx: &mut Context) {
         Expr::extern_fun(
             |args, ctx| {
                 if args.len() != 2 {
-                    return Expr::Nil;
+                    crate::stop!("zip requires 2 arguments, got {}", args.len());
                 }
                 let l1 = crate::context::eval(args[0].clone(), ctx);
                 let l2 = crate::context::eval(args[1].clone(), ctx);
@@ -156,7 +161,7 @@ pub fn register(ctx: &mut Context) {
                         }
                         Expr::List(res)
                     }
-                    _ => Expr::Nil,
+                    (a, b) => crate::stop!("zip expected two Lists, got {:?} and {:?}", a, b),
                 }
             },
             "zip",
@@ -181,7 +186,7 @@ pub fn register(ctx: &mut Context) {
                     flatten_recursively(v, &mut res);
                     Expr::List(res)
                 }
-                _ => Expr::Nil,
+                other => crate::stop!("flatten expected List, got {:?}", other),
             },
             "flatten",
             "Recursive flatten",
@@ -201,7 +206,7 @@ pub fn register(ctx: &mut Context) {
                     }
                     Expr::List(res)
                 }
-                _ => Expr::Nil,
+                other => crate::stop!("dedup expected List, got {:?}", other),
             },
             "dedup",
             "Remove duplicates",
@@ -215,7 +220,7 @@ pub fn register(ctx: &mut Context) {
             |args, ctx| match eval_first(args, ctx) {
                 Expr::Map(m) => Expr::List(m.keys().cloned().collect()),
                 Expr::HashMap(m) => Expr::List(m.keys().cloned().collect()),
-                _ => Expr::Nil,
+                other => crate::stop!("keys expected Map or HashMap, got {:?}", other),
             },
             "keys",
             "Get map keys",
@@ -228,7 +233,7 @@ pub fn register(ctx: &mut Context) {
             |args, ctx| match eval_first(args, ctx) {
                 Expr::Map(m) => Expr::List(m.values().cloned().collect()),
                 Expr::HashMap(m) => Expr::List(m.values().cloned().collect()),
-                _ => Expr::Nil,
+                other => crate::stop!("values expected Map or HashMap, got {:?}", other),
             },
             "values",
             "Get map values",
@@ -240,7 +245,7 @@ pub fn register(ctx: &mut Context) {
         Expr::extern_fun(
             |args, ctx| {
                 if args.len() != 2 {
-                    return Expr::Nil;
+                    crate::stop!("contains_key requires 2 arguments, got {}", args.len());
                 }
                 let map = crate::context::eval(args[0].clone(), ctx);
                 let key = crate::context::eval(args[1].clone(), ctx);
@@ -260,7 +265,7 @@ pub fn register(ctx: &mut Context) {
                             Expr::Nil
                         }
                     }
-                    _ => Expr::Nil,
+                    other => crate::stop!("contains_key expected Map, got {:?}", other),
                 }
             },
             "contains_key",
@@ -273,7 +278,7 @@ pub fn register(ctx: &mut Context) {
         Expr::extern_fun(
             |args, ctx| {
                 if args.len() != 2 {
-                    return Expr::Nil;
+                    crate::stop!("merge requires 2 arguments, got {}", args.len());
                 }
                 let map1 = crate::context::eval(args[0].clone(), ctx);
                 let map2 = crate::context::eval(args[1].clone(), ctx);
@@ -287,7 +292,11 @@ pub fn register(ctx: &mut Context) {
                         m1.extend(m2);
                         Expr::HashMap(m1)
                     }
-                    _ => Expr::Nil,
+                    (a, b) => crate::stop!(
+                        "merge expected two Maps/HashMaps of same type, got {:?} and {:?}",
+                        a,
+                        b
+                    ),
                 }
             },
             "merge",
@@ -301,23 +310,25 @@ pub fn register(ctx: &mut Context) {
         Expr::extern_fun(
             |args, ctx| {
                 if args.len() != 2 {
-                    return Expr::List(vec![]);
+                    crate::stop!("map requires 2 arguments (list, function)");
                 }
-                let list = crate::context::eval(args[0].clone(), ctx);
-                let func = crate::context::eval(args[1].clone(), ctx); // Func should optimize to self or extern
+                // let list = crate::context::eval(args[0].clone(), ctx);
+                crate::context::eval_in_place(&mut args[0], ctx);
+                crate::context::eval_in_place(&mut args[1], ctx);
+                // let func = crate::context::eval(args[1].clone(), ctx); // Func should optimize to self or extern
 
-                match list {
+                match args[0].clone() {
                     Expr::List(v) => {
                         let mut res = Vec::with_capacity(v.len());
                         for item in v {
                             // Call function
-                            let call_args = vec![item];
-                            let val = call_fn(&func, &call_args, ctx);
+                            let mut call_args = vec![item];
+                            let val = call_fn(&args[1], &mut call_args, ctx);
                             res.push(val);
                         }
                         Expr::List(res)
                     }
-                    _ => Expr::List(vec![]),
+                    other => crate::stop!("map expected List, got {:?}", other),
                 }
             },
             "map",
@@ -330,7 +341,7 @@ pub fn register(ctx: &mut Context) {
         Expr::extern_fun(
             |args, ctx| {
                 if args.len() != 2 {
-                    return Expr::List(vec![]);
+                    crate::stop!("filter requires 2 arguments (list, function)");
                 }
                 let list = crate::context::eval(args[0].clone(), ctx);
                 let func = crate::context::eval(args[1].clone(), ctx);
@@ -339,8 +350,8 @@ pub fn register(ctx: &mut Context) {
                     Expr::List(v) => {
                         let mut res = Vec::new();
                         for item in v {
-                            let call_args = vec![item.clone()];
-                            let val = call_fn(&func, &call_args, ctx);
+                            let mut call_args = vec![item.clone()];
+                            let val = call_fn(&func, &mut call_args, ctx);
                             // Truthy check
                             if val != Expr::Nil {
                                 res.push(item);
@@ -348,7 +359,7 @@ pub fn register(ctx: &mut Context) {
                         }
                         Expr::List(res)
                     }
-                    _ => Expr::List(vec![]),
+                    other => crate::stop!("filter expected List, got {:?}", other),
                 }
             },
             "filter",
@@ -361,7 +372,7 @@ pub fn register(ctx: &mut Context) {
         Expr::extern_fun(
             |args, ctx| {
                 if args.len() != 3 {
-                    return Expr::Nil;
+                    crate::stop!("fold requires 3 arguments (list, init, function)");
                 }
                 let list = crate::context::eval(args[0].clone(), ctx);
                 let mut acc = crate::context::eval(args[1].clone(), ctx);
@@ -370,12 +381,12 @@ pub fn register(ctx: &mut Context) {
                 match list {
                     Expr::List(v) => {
                         for item in v {
-                            let call_args = vec![acc, item];
-                            acc = call_fn(&func, &call_args, ctx);
+                            let mut call_args = vec![acc, item];
+                            acc = call_fn(&func, &mut call_args, ctx);
                         }
                         acc
                     }
-                    _ => acc, // Return init if not list
+                    other => crate::stop!("fold expected List, got {:?}", other),
                 }
             },
             "fold",
@@ -388,7 +399,7 @@ pub fn register(ctx: &mut Context) {
         Expr::extern_fun(
             |args, ctx| {
                 if args.len() != 2 {
-                    return Expr::Nil;
+                    crate::stop!("find requires 2 arguments (list, function)");
                 }
                 let list = crate::context::eval(args[0].clone(), ctx);
                 let func = crate::context::eval(args[1].clone(), ctx);
@@ -396,15 +407,15 @@ pub fn register(ctx: &mut Context) {
                 match list {
                     Expr::List(v) => {
                         for item in v {
-                            let call_args = vec![item.clone()];
-                            let val = call_fn(&func, &call_args, ctx);
+                            let mut call_args = vec![item.clone()];
+                            let val = call_fn(&func, &mut call_args, ctx);
                             if val != Expr::Nil {
                                 return item;
                             }
                         }
                         Expr::Nil
                     }
-                    _ => Expr::Nil,
+                    other => crate::stop!("find expected List, got {:?}", other),
                 }
             },
             "find",
@@ -417,7 +428,7 @@ pub fn register(ctx: &mut Context) {
         Expr::extern_fun(
             |args, ctx| {
                 if args.len() != 2 {
-                    return Expr::Nil;
+                    crate::stop!("any requires 2 arguments (list, function)");
                 }
                 let list = crate::context::eval(args[0].clone(), ctx);
                 let func = crate::context::eval(args[1].clone(), ctx);
@@ -425,15 +436,15 @@ pub fn register(ctx: &mut Context) {
                 match list {
                     Expr::List(v) => {
                         for item in v {
-                            let call_args = vec![item.clone()];
-                            let val = call_fn(&func, &call_args, ctx);
+                            let mut call_args = vec![item.clone()];
+                            let val = call_fn(&func, &mut call_args, ctx);
                             if val != Expr::Nil {
                                 return Expr::Int(1);
                             }
                         }
                         Expr::Nil
                     }
-                    _ => Expr::Nil,
+                    other => crate::stop!("any expected List, got {:?}", other),
                 }
             },
             "any",
@@ -446,7 +457,7 @@ pub fn register(ctx: &mut Context) {
         Expr::extern_fun(
             |args, ctx| {
                 if args.len() != 2 {
-                    return Expr::Nil;
+                    crate::stop!("all requires 2 arguments (list, function)");
                 }
                 let list = crate::context::eval(args[0].clone(), ctx);
                 let func = crate::context::eval(args[1].clone(), ctx);
@@ -454,15 +465,15 @@ pub fn register(ctx: &mut Context) {
                 match list {
                     Expr::List(v) => {
                         for item in v {
-                            let call_args = vec![item.clone()];
-                            let val = call_fn(&func, &call_args, ctx);
+                            let mut call_args = vec![item.clone()];
+                            let val = call_fn(&func, &mut call_args, ctx);
                             if val == Expr::Nil {
                                 return Expr::Nil;
                             }
                         }
                         Expr::Int(1)
                     }
-                    _ => Expr::Nil,
+                    other => crate::stop!("all expected List, got {:?}", other),
                 }
             },
             "all",
@@ -476,7 +487,7 @@ pub fn register(ctx: &mut Context) {
         Expr::extern_fun(
             |args, ctx| {
                 if args.len() != 2 {
-                    return Expr::Nil;
+                    crate::stop!("get requires 2 arguments (collection, key/index)");
                 }
                 let col = crate::context::eval(args[0].clone(), ctx);
                 let key = crate::context::eval(args[1].clone(), ctx);
@@ -487,7 +498,7 @@ pub fn register(ctx: &mut Context) {
                         if idx >= 0 && idx < v.len() as i64 {
                             v[idx as usize].clone()
                         } else {
-                            Expr::Nil
+                            crate::stop!("Index out of bounds: {} (len {})", i, v.len());
                         }
                     }
                     (Expr::Str(s), Expr::Int(i)) => {
@@ -497,14 +508,24 @@ pub fn register(ctx: &mut Context) {
                             s.chars()
                                 .nth(idx as usize)
                                 .map(|c| Expr::Str(c.to_string()))
-                                .unwrap_or(Expr::Nil)
+                                .unwrap_or(Expr::Nil) // Should be unreachable with bounds check
                         } else {
-                            Expr::Nil
+                            crate::stop!("Index out of bounds: {} (len {})", i, s.len());
                         }
                     }
-                    (Expr::Map(m), key) => m.get(&key).cloned().unwrap_or(Expr::Nil),
-                    (Expr::HashMap(m), key) => m.get(&key).cloned().unwrap_or(Expr::Nil),
-                    _ => Expr::Nil,
+                    (Expr::Map(m), key) => m
+                        .get(&key)
+                        .cloned()
+                        .unwrap_or_else(|| crate::stop!("Key not found in Map: {:?}", key)),
+                    (Expr::HashMap(m), key) => m
+                        .get(&key)
+                        .cloned()
+                        .unwrap_or_else(|| crate::stop!("Key not found in HashMap: {:?}", key)),
+                    (c, k) => crate::stop!(
+                        "get expected List/Str/Map and valid key, got {:?} and {:?}",
+                        c,
+                        k
+                    ),
                 }
             },
             "get",
@@ -517,7 +538,7 @@ pub fn register(ctx: &mut Context) {
         Expr::extern_fun(
             |args, ctx| {
                 if args.len() != 1 {
-                    return Expr::Nil;
+                    crate::stop!("enumerate requires 1 argument (list)");
                 }
                 let col = crate::context::eval(args[0].clone(), ctx);
 
@@ -529,7 +550,7 @@ pub fn register(ctx: &mut Context) {
                         }
                         Expr::List(result)
                     }
-                    _ => Expr::Nil,
+                    other => crate::stop!("enumerate expected List, got {:?}", other),
                 }
             },
             "enumerate",
@@ -543,13 +564,13 @@ pub fn register(ctx: &mut Context) {
 
 fn eval_first(args: &[Expr], ctx: &mut Context) -> Expr {
     if args.len() != 1 {
-        Expr::Nil
+        crate::stop!("Expected exactly 1 argument, got {}", args.len());
     } else {
         crate::context::eval(args[0].clone(), ctx)
     }
 }
 
-fn call_fn(func: &Expr, args: &[Expr], ctx: &mut Context) -> Expr {
+fn call_fn(func: &Expr, args: &mut [Expr], ctx: &mut Context) -> Expr {
     match func {
         Expr::Function {
             params: _,
@@ -557,19 +578,26 @@ fn call_fn(func: &Expr, args: &[Expr], ctx: &mut Context) -> Expr {
             env: _,
             name: _,
         } => {
-            let mut call_list = Vec::new();
-            call_list.push(func.clone());
-            for arg in args {
-                call_list.push(Expr::Quoted(Box::new(arg.clone())));
-            }
-            crate::context::eval(Expr::List(call_list), ctx)
+            // let mut call_list = Vec::new();
+            // call_list.push(func.clone());
+            // // for arg in args {
+            // //     call_list.push(Expr::Quoted(Box::new(arg.clone())));
+            // // }
+            // call_list.extend_from_slice(args);
+            // // crate::context::eval(Expr::List(call_list), ctx)
+            // let mut call_expr = Expr::List(call_list);
+            // crate::context::eval_in_place(&mut call_expr, ctx);
+            // call_expr
+            let mut func_expr = func.clone();
+            crate::context::apply_in_place(&mut func_expr, args, ctx);
+            func_expr
         }
         Expr::Extern(ext) => {
-            let mut call_args = Vec::new();
-            for arg in args {
-                call_args.push(Expr::Quoted(Box::new(arg.clone())));
-            }
-            ext.call(&call_args, ctx)
+            // let mut call_args = Vec::new();
+            // for arg in args {
+            //     call_args.push(Expr::Quoted(Box::new(arg.clone())));
+            // }
+            ext.call(args, ctx)
         }
         _ => Expr::Nil,
     }

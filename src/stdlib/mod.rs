@@ -6,6 +6,7 @@ use crate::context::Scope;
 use std::collections::{BTreeMap, HashMap};
 use std::sync::{Arc, RwLock};
 
+mod battle;
 pub mod collections;
 pub mod game;
 pub mod io;
@@ -40,13 +41,16 @@ pub fn stdlib() -> Context {
                 let mut sum = Expr::Nil;
 
                 for arg in args {
-                    match eval(arg.clone(), ctx) {
+                    let val = eval(arg.clone(), ctx);
+                    match val {
                         Expr::Int(n) => {
                             sum = match sum {
                                 Expr::Nil => Expr::Int(n),
                                 Expr::Int(m) => Expr::Int(m + n),
                                 Expr::Float(f) => Expr::Float(f + (n as f64)),
-                                _ => return Expr::Nil.into(),
+                                other => {
+                                    crate::stop!("Type error in +: cannot add Int to {:?}", other)
+                                }
                             };
                         }
                         Expr::Float(f) => {
@@ -54,7 +58,9 @@ pub fn stdlib() -> Context {
                                 Expr::Nil => Expr::Float(f),
                                 Expr::Int(n) => Expr::Float((n as f64) + f),
                                 Expr::Float(g) => Expr::Float(g + f),
-                                _ => return Expr::Nil.into(),
+                                other => {
+                                    crate::stop!("Type error in +: cannot add Float to {:?}", other)
+                                }
                             };
                         }
                         Expr::Str(s) => {
@@ -65,7 +71,9 @@ pub fn stdlib() -> Context {
                                     new_str.push_str(&s);
                                     Expr::Str(new_str)
                                 }
-                                _ => return Expr::Nil.into(),
+                                other => {
+                                    crate::stop!("Type error in +: cannot add Str to {:?}", other)
+                                }
                             };
                         }
                         Expr::List(lst) => {
@@ -76,8 +84,9 @@ pub fn stdlib() -> Context {
                                     new_list.extend_from_slice(&lst);
                                     Expr::List(new_list)
                                 }
-
-                                _ => return Expr::Nil.into(),
+                                other => {
+                                    crate::stop!("Type error in +: cannot add List to {:?}", other)
+                                }
                             };
                         }
                         Expr::Map(m) => {
@@ -97,7 +106,9 @@ pub fn stdlib() -> Context {
                                     }
                                     Expr::Map(new_map)
                                 }
-                                _ => return Expr::Nil.into(),
+                                other => {
+                                    crate::stop!("Type error in +: cannot add Map to {:?}", other)
+                                }
                             };
                         }
                         Expr::HashMap(m) => {
@@ -117,10 +128,17 @@ pub fn stdlib() -> Context {
                                     }
                                     Expr::Map(new_map)
                                 }
-                                _ => return Expr::Nil.into(),
+                                other => crate::stop!(
+                                    "Type error in +: cannot add HashMap to {:?}",
+                                    other
+                                ),
                             };
                         }
-                        _ => return Expr::Nil.into(),
+                        other => crate::stop!(
+                            "Invalid type for + operator: {:?} while evaluating {}",
+                            other,
+                            arg
+                        ),
                     }
                 }
 
@@ -144,13 +162,17 @@ pub fn stdlib() -> Context {
                 let mut sum = Expr::Nil;
 
                 for arg in args {
-                    match eval(arg.clone(), ctx) {
+                    let val = eval(arg.clone(), ctx);
+                    match val {
                         Expr::Int(n) => {
                             sum = match sum {
                                 Expr::Nil => Expr::Int(n),
                                 Expr::Int(m) => Expr::Int(m - n),
                                 Expr::Float(f) => Expr::Float(f - (n as f64)),
-                                _ => return Expr::Nil.into(),
+                                other => crate::stop!(
+                                    "Type error in -: cannot subtract Int from {:?}",
+                                    other
+                                ),
                             };
                         }
                         Expr::Float(f) => {
@@ -158,10 +180,13 @@ pub fn stdlib() -> Context {
                                 Expr::Nil => Expr::Float(f),
                                 Expr::Int(n) => Expr::Float((n as f64) - f),
                                 Expr::Float(g) => Expr::Float(g - f),
-                                _ => return Expr::Nil.into(),
+                                other => crate::stop!(
+                                    "Type error in -: cannot subtract Float from {:?}",
+                                    other
+                                ),
                             };
                         }
-                        _ => return Expr::Nil.into(),
+                        other => crate::stop!("Invalid type for -: {:?}", other),
                     }
                 }
 
@@ -176,7 +201,7 @@ pub fn stdlib() -> Context {
     ctx.define_op(
         "=",
         OpInfo {
-            precedence: 5,
+            precedence: 0,
             associativity: Assoc::Right,
             unary: false,
         },
@@ -225,13 +250,17 @@ pub fn stdlib() -> Context {
             |args, ctx| {
                 let mut prod = Expr::Nil;
                 for arg in args {
-                    match eval(arg.clone(), ctx) {
+                    let val = eval(arg.clone(), ctx);
+                    match val {
                         Expr::Int(n) => {
                             prod = match prod {
                                 Expr::Nil => Expr::Int(n),
                                 Expr::Int(m) => Expr::Int(m * n),
                                 Expr::Float(f) => Expr::Float(f * (n as f64)),
-                                _ => return Expr::Nil.into(),
+                                other => crate::stop!(
+                                    "Type error in *: cannot multiply Int with {:?}",
+                                    other
+                                ),
                             };
                         }
                         Expr::Float(f) => {
@@ -239,10 +268,13 @@ pub fn stdlib() -> Context {
                                 Expr::Nil => Expr::Float(f),
                                 Expr::Int(n) => Expr::Float((n as f64) * f),
                                 Expr::Float(g) => Expr::Float(g * f),
-                                _ => return Expr::Nil.into(),
+                                other => crate::stop!(
+                                    "Type error in *: cannot multiply Float with {:?}",
+                                    other
+                                ),
                             };
                         }
-                        _ => return Expr::Nil.into(),
+                        other => crate::stop!("Invalid type for *: {:?}", other),
                     }
                 }
                 if prod == Expr::Nil {
@@ -269,7 +301,8 @@ pub fn stdlib() -> Context {
                 let mut res = Expr::Nil;
                 let mut first = true;
                 for arg in args {
-                    match eval(arg.clone(), ctx) {
+                    let val = eval(arg.clone(), ctx);
+                    match val {
                         Expr::Int(n) => {
                             if first {
                                 res = Expr::Int(n);
@@ -280,17 +313,17 @@ pub fn stdlib() -> Context {
                                         if n != 0 {
                                             Expr::Int(m / n)
                                         } else {
-                                            Expr::Nil
+                                            crate::stop!("Division by zero");
                                         }
                                     }
                                     Expr::Float(f) => {
                                         if n != 0 {
                                             Expr::Float(f / (n as f64))
                                         } else {
-                                            Expr::Nil
+                                            crate::stop!("Division by zero");
                                         }
                                     }
-                                    _ => return Expr::Nil.into(),
+                                    other => crate::stop!("Type error in /: {:?}", other),
                                 };
                             }
                         }
@@ -304,21 +337,21 @@ pub fn stdlib() -> Context {
                                         if f != 0.0 {
                                             Expr::Float((n as f64) / f)
                                         } else {
-                                            Expr::Nil
+                                            crate::stop!("Division by zero");
                                         }
                                     }
                                     Expr::Float(g) => {
                                         if f != 0.0 {
                                             Expr::Float(g / f)
                                         } else {
-                                            Expr::Nil
+                                            crate::stop!("Division by zero");
                                         }
                                     }
-                                    _ => return Expr::Nil.into(),
+                                    other => crate::stop!("Type error in /: {:?}", other),
                                 };
                             }
                         }
-                        _ => return Expr::Nil.into(),
+                        other => crate::stop!("Invalid type for /: {:?}", other),
                     }
                 }
                 res
@@ -338,14 +371,16 @@ pub fn stdlib() -> Context {
         Expr::extern_fun(
             |args, ctx| {
                 if args.len() != 2 {
-                    return Expr::Nil;
+                    crate::stop!("Modulo % requires 2 arguments");
                 }
                 let first = eval(args[0].clone(), ctx);
                 let second = eval(args[1].clone(), ctx);
                 match (first, second) {
                     (Expr::Int(a), Expr::Int(b)) => Expr::Int(a % b),
+                    (Expr::Float(a), Expr::Int(b)) => Expr::Float(a % (b as f64)),
+                    (Expr::Int(a), Expr::Float(b)) => Expr::Float((a as f64) % b),
                     (Expr::Float(a), Expr::Float(b)) => Expr::Float(a % b),
-                    _ => Expr::Nil,
+                    (a, b) => crate::stop!("Invalid types for %: {:?} % {:?}", a, b),
                 }
             },
             "%",
@@ -369,13 +404,39 @@ pub fn stdlib() -> Context {
                 let first = eval(args[0].clone(), ctx);
                 for arg in &args[1..] {
                     if eval(arg.clone(), ctx) != first {
-                        return Expr::Nil; // False
+                        return Expr::Int(0); // False
                     }
                 }
                 Expr::Int(1) // True
             },
             "=",
             "Check equality.",
+        ),
+    );
+
+    // Inequality
+    ctx.define_op(
+        "!=",
+        OpInfo {
+            precedence: 5,
+            associativity: Assoc::Left,
+            unary: false,
+        },
+        Expr::extern_fun(
+            |args, ctx| {
+                if args.len() != 2 {
+                    return Expr::Int(1);
+                }
+                let first = eval(args[0].clone(), ctx);
+                let second = eval(args[1].clone(), ctx);
+                if first != second {
+                    Expr::Int(1)
+                } else {
+                    Expr::Int(0)
+                }
+            },
+            "!=",
+            "Check inequality.",
         ),
     );
 
@@ -398,25 +459,25 @@ pub fn stdlib() -> Context {
                     match (&prev, &curr) {
                         (Expr::Int(a), Expr::Int(b)) => {
                             if !(*a < *b) {
-                                return Expr::Nil;
+                                return Expr::Int(0);
                             }
                         }
                         (Expr::Float(a), Expr::Float(b)) => {
                             if !(*a < *b) {
-                                return Expr::Nil;
+                                return Expr::Int(0);
                             }
                         }
                         (Expr::Int(a), Expr::Float(b)) => {
                             if !((*a as f64) < *b) {
-                                return Expr::Nil;
+                                return Expr::Int(0);
                             }
                         }
                         (Expr::Float(a), Expr::Int(b)) => {
                             if !(*a < (*b as f64)) {
-                                return Expr::Nil;
+                                return Expr::Int(0);
                             }
                         }
-                        _ => return Expr::Nil,
+                        (a, b) => crate::stop!("Type mismatch in < : {:?} vs {:?}", a, b),
                     }
                     prev = curr;
                 }
@@ -446,25 +507,25 @@ pub fn stdlib() -> Context {
                     match (&prev, &curr) {
                         (Expr::Int(a), Expr::Int(b)) => {
                             if !(*a > *b) {
-                                return Expr::Nil;
+                                return Expr::Int(0);
                             }
                         }
                         (Expr::Float(a), Expr::Float(b)) => {
                             if !(*a > *b) {
-                                return Expr::Nil;
+                                return Expr::Int(0);
                             }
                         }
                         (Expr::Int(a), Expr::Float(b)) => {
                             if !((*a as f64) > *b) {
-                                return Expr::Nil;
+                                return Expr::Int(0);
                             }
                         }
                         (Expr::Float(a), Expr::Int(b)) => {
                             if !(*a > (*b as f64)) {
-                                return Expr::Nil;
+                                return Expr::Int(0);
                             }
                         }
-                        _ => return Expr::Nil,
+                        (a, b) => crate::stop!("Type mismatch in > : {:?} vs {:?}", a, b),
                     }
                     prev = curr;
                 }
@@ -478,14 +539,14 @@ pub fn stdlib() -> Context {
     ctx.define_op(
         "<=",
         OpInfo {
-            precedence: 10,
+            precedence: 5,
             associativity: Assoc::Left,
             unary: false,
         },
         Expr::extern_fun(
             |args, ctx| {
                 if args.len() != 2 {
-                    return Expr::Nil;
+                    stop!("<= operator requires exactly 2 arguments");
                 }
                 let left = eval(args[0].clone(), ctx);
                 let right = eval(args[1].clone(), ctx);
@@ -498,7 +559,7 @@ pub fn stdlib() -> Context {
                     (Expr::Float(a), Expr::Int(b)) => {
                         Expr::Int(if a <= (b as f64) { 1 } else { 0 })
                     }
-                    _ => Expr::Nil,
+                    (a, b) => crate::stop!("Type mismatch in <= : {:?} vs {:?}", a, b),
                 }
             },
             "<=",
@@ -509,14 +570,14 @@ pub fn stdlib() -> Context {
     ctx.define_op(
         ">=",
         OpInfo {
-            precedence: 10,
+            precedence: 5,
             associativity: Assoc::Left,
             unary: false,
         },
         Expr::extern_fun(
             |args, ctx| {
                 if args.len() != 2 {
-                    return Expr::Nil;
+                    stop!(">= operator requires exactly 2 arguments");
                 }
                 let left = eval(args[0].clone(), ctx);
                 let right = eval(args[1].clone(), ctx);
@@ -529,7 +590,7 @@ pub fn stdlib() -> Context {
                     (Expr::Float(a), Expr::Int(b)) => {
                         Expr::Int(if a >= (b as f64) { 1 } else { 0 })
                     }
-                    _ => Expr::Nil,
+                    (a, b) => crate::stop!("Type mismatch in >= : {:?} vs {:?}", a, b),
                 }
             },
             ">=",
@@ -548,13 +609,12 @@ pub fn stdlib() -> Context {
         Expr::extern_fun(
             |args, ctx| {
                 if args.len() != 1 {
-                    return Expr::Nil;
+                    stop!("! operator requires exactly 1 argument, got {:?}", args);
                 }
                 match eval(args[0].clone(), ctx) {
                     Expr::Int(n) => Expr::Int(-n),
                     Expr::Float(f) => Expr::Float(-f),
-                    Expr::Nil => Expr::Int(1),
-                    _ => Expr::Nil,
+                    other => crate::stop!("Invalid type for ! operator: {:?}", other),
                 }
             },
             "!",
@@ -567,11 +627,11 @@ pub fn stdlib() -> Context {
         Expr::extern_fun(
             |args, ctx| {
                 if args.len() != 1 {
-                    return Expr::Nil;
+                    stop!("not requires exactly 1 argument");
                 }
                 match eval(args[0].clone(), ctx) {
-                    Expr::Nil => Expr::Int(1),
-                    _ => Expr::Nil,
+                    Expr::Int(0) => Expr::Int(1),
+                    _ => Expr::Int(0),
                 }
             },
             "not",
@@ -580,15 +640,20 @@ pub fn stdlib() -> Context {
     );
 
     // Logic AND (short-circuit)
-    ctx.define(
-        Expr::sym("and"),
+    ctx.define_op(
+        "and",
+        OpInfo {
+            precedence: 4,
+            associativity: Assoc::Left,
+            unary: false,
+        },
         Expr::extern_fun(
             |args, ctx| {
                 let mut last = Expr::Int(1);
                 for arg in args {
                     last = eval(arg.clone(), ctx);
-                    if matches!(last, Expr::Nil) {
-                        return Expr::Nil;
+                    if matches!(last, Expr::Nil | Expr::Int(0)) {
+                        return Expr::Int(0);
                     }
                 }
                 last
@@ -599,17 +664,22 @@ pub fn stdlib() -> Context {
     );
 
     // Logic OR (short-circuit)
-    ctx.define(
-        Expr::sym("or"),
+    ctx.define_op(
+        "or",
+        OpInfo {
+            precedence: 3,
+            associativity: Assoc::Left,
+            unary: false,
+        },
         Expr::extern_fun(
             |args, ctx| {
                 for arg in args {
                     let val = eval(arg.clone(), ctx);
-                    if !matches!(val, Expr::Nil) {
+                    if !matches!(val, Expr::Nil | Expr::Int(0)) {
                         return val;
                     }
                 }
-                Expr::Nil
+                Expr::Int(0)
             },
             "or",
             "Logical OR (short-circuiting).",
@@ -644,7 +714,7 @@ pub fn stdlib() -> Context {
                     Expr::Str(s) => Expr::Int(s.len() as i64),
                     Expr::Map(m) => Expr::Int(m.len() as i64),
                     Expr::HashMap(m) => Expr::Int(m.len() as i64),
-                    _ => Expr::Nil,
+                    other => crate::stop!("len() expected List/Str/Map, got {:?}", other),
                 }
             },
             "len",
@@ -657,11 +727,11 @@ pub fn stdlib() -> Context {
         Expr::extern_fun(
             |args, ctx| {
                 if args.is_empty() {
-                    return Expr::Nil;
+                    stop!("first requires at least 1 argument");
                 }
                 match crate::context::eval(args[0].clone(), ctx) {
                     Expr::List(l) => l.first().cloned().unwrap_or(Expr::Nil),
-                    _ => Expr::Nil,
+                    other => crate::stop!("first expected List, got {:?}", other),
                 }
             },
             "first",
@@ -674,7 +744,7 @@ pub fn stdlib() -> Context {
         Expr::extern_fun(
             |args, ctx| {
                 if args.is_empty() {
-                    return Expr::Nil;
+                    stop!("rest requires at least 1 argument");
                 }
                 match eval(args[0].clone(), ctx) {
                     Expr::List(l) => {
@@ -684,7 +754,7 @@ pub fn stdlib() -> Context {
                             Expr::List(l[1..].to_vec())
                         }
                     }
-                    _ => Expr::Nil,
+                    other => crate::stop!("rest() expected List, got {:?}", other),
                 }
             },
             "rest",
@@ -697,7 +767,7 @@ pub fn stdlib() -> Context {
         Expr::extern_fun(
             |args, ctx| {
                 if args.len() != 2 {
-                    return Expr::Nil;
+                    stop!("cons requires exactly 2 arguments");
                 }
                 let head = eval(args[0].clone(), ctx);
                 match eval(args[1].clone(), ctx) {
@@ -707,7 +777,10 @@ pub fn stdlib() -> Context {
                         Expr::List(new_list)
                     }
                     Expr::Nil => Expr::List(vec![head]),
-                    _ => Expr::Nil,
+                    other => crate::stop!(
+                        "cons second argument must be a List or Nil, got {:?}",
+                        other
+                    ),
                 }
             },
             "cons",
@@ -721,7 +794,7 @@ pub fn stdlib() -> Context {
         Expr::extern_fun(
             |args, ctx| {
                 if args.len() < 2 || args.len() > 3 {
-                    return Expr::Nil;
+                    stop!("if requires 2 or 3 arguments");
                 }
                 let cond = eval(args[0].clone(), ctx);
                 if !matches!(cond, Expr::Nil | Expr::Int(0)) {
@@ -779,7 +852,7 @@ pub fn stdlib() -> Context {
                             }
                         }
                     }
-                    _ => return Expr::Nil,
+                    _ => stop!("for loop iterator must be a List"),
                 }
                 last
             },
@@ -803,7 +876,7 @@ pub fn stdlib() -> Context {
         ),
     );
 
-    fn print(args: &[Expr], ctx: &mut Context) -> Expr {
+    fn print(args: &mut [Expr], ctx: &mut Context) -> Expr {
         let mut result = Expr::Nil;
         let mut first = true;
         for expr in args {
@@ -876,7 +949,10 @@ pub fn stdlib() -> Context {
                 let obj_ref = if let Expr::Ref(r) = &obj_expr {
                     r
                 } else {
-                    return Expr::Nil; // Can only use dot on refs
+                    crate::stop!(
+                        "Type error: first argument to . must be a reference, got {:?}",
+                        obj_expr
+                    );
                 };
 
                 let result = if args.len() == 2 {
@@ -901,7 +977,7 @@ pub fn stdlib() -> Context {
                                     env,
                                     name,
                                 } => {
-                                    let mut new_ctx = env.clone();
+                                    let mut new_ctx = env.fork();
                                     new_ctx.define(Expr::sym("self"), obj_expr.clone());
                                     return Expr::Function {
                                         params,
@@ -933,7 +1009,7 @@ pub fn stdlib() -> Context {
                                 env,
                                 name,
                             } => {
-                                let mut new_ctx = env.clone();
+                                let mut new_ctx = env.fork();
                                 new_ctx.define(Expr::sym("self"), obj_expr.clone());
                                 Expr::Function {
                                     params,
@@ -945,7 +1021,11 @@ pub fn stdlib() -> Context {
                             _ => val,
                         }
                     } else {
-                        Expr::Nil
+                        crate::stop!(
+                            "Attribute {} not found on expression {}",
+                            attr_expr,
+                            obj_expr
+                        )
                     }
                 } else {
                     let attr_expr = if let Expr::Sym(s) = &args[1] {
@@ -963,7 +1043,7 @@ pub fn stdlib() -> Context {
                         Expr::HashMap(m) => {
                             m.insert(attr_expr, val_expr.clone());
                         }
-                        _ => return Expr::Nil,
+                        _ => crate::stop!("Type error: cannot set property on {:?}", *guard),
                     };
                     val_expr
                 };
@@ -977,7 +1057,7 @@ pub fn stdlib() -> Context {
     ctx.define_op(
         "?",
         OpInfo {
-            precedence: 0,
+            precedence: 5,
             associativity: Assoc::Left,
             unary: false,
         },
@@ -987,10 +1067,7 @@ pub fn stdlib() -> Context {
                     return Expr::Nil;
                 }
                 let obj = eval(args[0].clone(), ctx);
-                let key = match &args[1] {
-                    Expr::Sym(s) => Expr::Sym(s.clone()),
-                    _ => eval(args[1].clone(), ctx),
-                };
+                let key = eval(args[1].clone(), ctx);
 
                 if args.len() == 3 {
                     let val = eval(args[2].clone(), ctx);
@@ -1010,11 +1087,11 @@ pub fn stdlib() -> Context {
                                     }
                                 }
                             }
-                            _ => return Expr::Nil,
+                            _ => crate::stop!("Type error: cannot index into {:?}", *guard),
                         }
                         return val;
                     }
-                    return Expr::Nil;
+                    crate::stop!("Type error: cannot index into non-reference {:?}", obj);
                 } else {
                     match obj {
                         Expr::List(l) => {
@@ -1022,8 +1099,16 @@ pub fn stdlib() -> Context {
                                 if i >= 0 && (i as usize) < l.len() {
                                     return l[i as usize].clone();
                                 }
+                                crate::stop!(
+                                    "Index out of bounds: {} for list of length {}",
+                                    i,
+                                    l.len()
+                                );
                             }
-                            Expr::Nil
+                            crate::stop!(
+                                "Type error: list index must be an integer, got {:?}",
+                                key
+                            );
                         }
                         Expr::Map(m) => m.get(&key).cloned().unwrap_or(Expr::Nil),
                         Expr::HashMap(m) => m.get(&key).cloned().unwrap_or(Expr::Nil),
@@ -1035,15 +1120,27 @@ pub fn stdlib() -> Context {
                                         if i >= 0 && (i as usize) < l.len() {
                                             return l[i as usize].clone();
                                         }
+                                        crate::stop!(
+                                            "Index out of bounds: {} for list of length {}",
+                                            i,
+                                            l.len()
+                                        );
                                     }
-                                    Expr::Nil
+                                    crate::stop!(
+                                        "Type error: list index must be an integer, got {:?}",
+                                        key
+                                    );
                                 }
-                                Expr::Map(m) => m.get(&key).cloned().unwrap_or(Expr::Nil),
-                                Expr::HashMap(m) => m.get(&key).cloned().unwrap_or(Expr::Nil),
+                                Expr::Map(m) => m.get(&key).cloned().unwrap_or_else(|| {
+                                    crate::stop!("Key {:?} not found in Map", key)
+                                }),
+                                Expr::HashMap(m) => m.get(&key).cloned().unwrap_or_else(|| {
+                                    crate::stop!("Key {:?} not found in HashMap", key)
+                                }),
                                 _ => Expr::Nil,
                             }
                         }
-                        _ => Expr::Nil,
+                        _ => crate::stop!("Type error: cannot index into {:?}", obj),
                     }
                 }
             },
@@ -1084,15 +1181,15 @@ pub fn stdlib() -> Context {
                 }
                 let params_expr = &args[0];
 
-                let body = if args.len() == 2 {
-                    Box::new(args[1].clone())
+                let body = Box::new(if args.len() == 2 {
+                    args[1].clone()
                 } else {
                     let mut do_block = vec![Expr::sym("do")];
                     for i in 1..args.len() {
                         do_block.push(args[i].clone());
                     }
-                    Box::new(Expr::List(do_block))
-                };
+                    Expr::List(do_block)
+                });
 
                 let params = match params_expr {
                     Expr::List(lst) => {
@@ -1128,11 +1225,11 @@ pub fn stdlib() -> Context {
         Expr::extern_fun(
             |args, ctx| {
                 if args.len() < 2 {
-                    return Expr::Nil;
+                    crate::stop!("module requires at least a name and one expression");
                 }
                 let name_sym = match &args[0] {
                     Expr::Sym(s) => s.clone(),
-                    _ => return Expr::Nil,
+                    _ => crate::stop!("module name must be a symbol"),
                 };
 
                 let module_scope = Scope {
@@ -1176,7 +1273,7 @@ pub fn stdlib() -> Context {
         Expr::extern_fun(
             |args, ctx| {
                 if args.len() < 3 {
-                    return Expr::Nil;
+                    crate::stop!("defun requires at least a name, parameters, and a body");
                 }
                 let name_expr = &args[0];
                 let params_expr = &args[1];
@@ -1184,7 +1281,7 @@ pub fn stdlib() -> Context {
 
                 let fn_name_sym = match name_expr {
                     Expr::Sym(s) => s.clone(),
-                    _ => return Expr::Nil,
+                    _ => crate::stop!("Function name must be a symbol"),
                 };
 
                 let params = match params_expr {
@@ -1201,7 +1298,7 @@ pub fn stdlib() -> Context {
                     }
                     Expr::Sym(s) => vec![s.clone()],
                     Expr::Nil => vec![],
-                    _ => return Expr::Nil,
+                    _ => crate::stop!("Function parameters must be a list or symbol"),
                 };
 
                 let body = if body_exprs.len() == 1 {
@@ -1240,7 +1337,7 @@ pub fn stdlib() -> Context {
 
                 let struct_name = match name_expr {
                     Expr::Sym(s) => s.clone(),
-                    _ => return Expr::Nil,
+                    _ => crate::stop!("Struct name must be a symbol"),
                 };
 
                 let fields: Vec<crate::symbol::Symbol> = match fields_expr {
@@ -1256,18 +1353,20 @@ pub fn stdlib() -> Context {
                         syms
                     }
                     Expr::Nil => vec![],
-                    _ => return Expr::Nil,
+                    _ => crate::stop!("Struct fields must be a list of symbols"),
                 };
 
                 let mut methods = BTreeMap::new();
                 for method_def in method_defs {
                     if let Expr::List(l) = method_def {
                         if l.len() < 3 {
-                            return Expr::Nil;
+                            crate::stop!(
+                                "Method definition requires a name, parameters, and a body"
+                            );
                         } // Name, Params, Body
                         let m_name = match &l[0] {
                             Expr::Sym(s) => s.clone(),
-                            _ => return Expr::Nil,
+                            _ => crate::stop!("Method name must be a symbol"),
                         };
 
                         let m_params = match &l[1] {
@@ -1283,7 +1382,7 @@ pub fn stdlib() -> Context {
                                 ps
                             }
                             Expr::Nil => vec![],
-                            _ => return Expr::Nil,
+                            _ => crate::stop!("Method parameters must be a list of symbols"),
                         };
 
                         let m_body = if l.len() == 3 {
@@ -1300,7 +1399,7 @@ pub fn stdlib() -> Context {
                         };
                         methods.insert(m_name, method_func);
                     } else {
-                        return Expr::Nil;
+                        crate::stop!("Method definition must be a list");
                     }
                 }
 
@@ -1350,12 +1449,12 @@ pub fn stdlib() -> Context {
         Expr::extern_fun(
             |args, ctx| {
                 if args.len() != 1 {
-                    return Expr::Nil;
+                    crate::stop!("sqrt requires exactly one argument");
                 }
                 match eval(args[0].clone(), ctx) {
                     Expr::Int(n) => Expr::Float((n as f64).sqrt()),
                     Expr::Float(f) => Expr::Float(f.sqrt()),
-                    _ => Expr::Nil,
+                    _ => crate::stop!("sqrt expected Int or Float"),
                 }
             },
             "sqrt",
@@ -1368,7 +1467,7 @@ pub fn stdlib() -> Context {
         Expr::extern_fun(
             |args, ctx| {
                 if args.len() != 2 {
-                    return Expr::Nil;
+                    crate::stop!("pow requires exactly two arguments");
                 }
                 let base = eval(args[0].clone(), ctx);
                 let exp = eval(args[1].clone(), ctx);
@@ -1377,7 +1476,7 @@ pub fn stdlib() -> Context {
                     (Expr::Float(b), Expr::Float(e)) => Expr::Float(b.powf(e)),
                     (Expr::Int(b), Expr::Float(e)) => Expr::Float((b as f64).powf(e)),
                     (Expr::Float(b), Expr::Int(e)) => Expr::Float(b.powf(e as f64)),
-                    _ => Expr::Nil,
+                    _ => crate::stop!("pow expected Int or Float arguments"),
                 }
             },
             "pow",
@@ -1390,14 +1489,14 @@ pub fn stdlib() -> Context {
         Expr::extern_fun(
             |args, ctx| {
                 if args.len() != 1 {
-                    return Expr::Nil;
+                    crate::stop!("length requires exactly one argument");
                 }
                 match eval(args[0].clone(), ctx) {
                     Expr::List(l) => Expr::Int(l.len() as i64),
                     Expr::Str(s) => Expr::Int(s.len() as i64),
                     Expr::Map(m) => Expr::Int(m.len() as i64),
                     Expr::HashMap(hm) => Expr::Int(hm.len() as i64),
-                    _ => Expr::Int(0),
+                    _ => crate::stop!("length expected List, Str, Map, or HashMap"),
                 }
             },
             "length",
@@ -1421,12 +1520,16 @@ pub fn stdlib() -> Context {
                 match (idx_expr, list_expr) {
                     (Expr::Int(idx), Expr::List(l)) => {
                         if idx < 0 || idx >= l.len() as i64 {
-                            Expr::Nil
+                            crate::stop!(
+                                "Index out of bounds: {} for list of length {}",
+                                idx,
+                                l.len()
+                            );
                         } else {
                             l[idx as usize].clone()
                         }
                     }
-                    _ => Expr::Nil,
+                    _ => crate::stop!("nth expected (Int, List)"),
                 }
             },
             "nth",
@@ -1450,7 +1553,7 @@ pub fn stdlib() -> Context {
                         let count = n.min(l.len());
                         Expr::List(l[0..count].to_vec())
                     }
-                    _ => Expr::Nil,
+                    _ => crate::stop!("take expected (Int, List)"),
                 }
             },
             "take",
@@ -1477,7 +1580,7 @@ pub fn stdlib() -> Context {
                             Expr::List(l[n..].to_vec())
                         }
                     }
-                    _ => Expr::Nil,
+                    _ => crate::stop!("drop expected (Int, List)"),
                 }
             },
             "drop",
@@ -1508,7 +1611,7 @@ pub fn call_anon_fn(func: &Expr, args: &[Expr], ctx: &mut Context) -> Expr {
             for arg in args {
                 call_args.push(Expr::Quoted(Box::new(arg.clone())));
             }
-            ext.call(&call_args, ctx)
+            ext.call(&mut call_args, ctx)
         }
         _ => Expr::Nil,
     }

@@ -70,6 +70,16 @@ impl Context {
         }
     }
 
+    pub fn fork(&self) -> Self {
+        Self {
+            parsing: self.parsing.clone(),
+            scope: Arc::new(Scope {
+                vars: RwLock::new(HashMap::new()),
+                parent: Some(self.scope.clone()),
+            }),
+        }
+    }
+
     pub fn define_op(&mut self, symbol: impl ToString, info: OpInfo, e: Expr) {
         let symbol = Symbol::new(&symbol.to_string());
         {
@@ -122,10 +132,66 @@ pub fn eval(mut expr: Expr, ctx: &mut Context) -> Expr {
 
                 // Treat the list as a function application
                 let func_expr = list[0].clone();
-                let args = list[1..].to_vec();
+                let mut args = list[1..].to_vec();
 
                 match eval(func_expr, ctx) {
-                    Expr::Extern(f) => expr = f.call(&args, ctx),
+                    Expr::Extern(f) => expr = f.call(&mut args, ctx),
+                    // Expr::Ref(func_expr) => {
+                    //     match &*func_expr.read().unwrap() {
+                    //         Expr::Extern(f) => {
+                    //             expr = f.call(&mut args, ctx);
+                    //             break;
+                    //         },
+                    //         Expr::Function {
+                    //             params,
+                    //             body,
+                    //             env,
+                    //             name,
+                    //         } => {
+                    //             is_in_new_env = true;
+                    //             if params.len() != args.len() {
+                    //                 panic!(
+                    //                     "Function {:?} expected {} arguments, got {}. Args: {:?}",
+                    //                     name,
+                    //                     params.len(),
+                    //                     args.len(),
+                    //                     args
+                    //                 );
+                    //             }
+
+                    //             let new_scope = Scope {
+                    //                 vars: RwLock::new(HashMap::new()),
+                    //                 parent: Some(env.scope.clone()),
+                    //             };
+
+                    //             let mut new_ctx = Context {
+                    //                 parsing: env.parsing.clone(),
+                    //                 scope: Arc::new(new_scope),
+                    //             };
+
+                    //             // If named, bind self to support recursion
+                    //             if let Some(fn_name) = &name {
+                    //                 let func_clone = Expr::Function {
+                    //                     params: params.clone(),
+                    //                     body: body.clone(),
+                    //                     env: env.clone(),
+                    //                     name: name.clone(),
+                    //                 };
+                    //                 new_ctx.define(fn_name.clone().into(), func_clone);
+                    //             }
+
+                    //             for (param, arg) in params.into_iter().zip(args.into_iter()) {
+                    //                 new_ctx.define(param.clone().into(), eval(arg, ctx));
+                    //             }
+
+                    //             expr = *body.clone();
+                    //             *ctx = new_ctx;
+                    //             continue;
+                    //         }
+                    //         _other => {}
+                    //     }
+                    //     expr = Expr::Ref(func_expr);
+                    // }
                     Expr::Function {
                         params,
                         body,
@@ -200,6 +266,11 @@ pub fn eval(mut expr: Expr, ctx: &mut Context) -> Expr {
             Expr::Quoted(q) => {
                 expr = *q;
             }
+            Expr::Ref(r) => {
+                let result = eval((*r.read().unwrap()).clone(), ctx);
+                r.write().unwrap().clone_from(&result);
+                expr = result;
+            }
 
             _ => {
                 break;
@@ -214,3 +285,240 @@ pub fn eval(mut expr: Expr, ctx: &mut Context) -> Expr {
 
     expr
 }
+
+pub fn eval_in_place(expr: &mut Expr, ctx: &mut Context) {
+    *expr = eval(expr.clone(), ctx);
+}
+
+pub fn apply_in_place(func: &mut Expr, args: &mut [Expr], ctx: &mut Context) {
+    match eval(func.clone(), ctx) {
+        Expr::Extern(f) => {
+            let result = f.call(args, ctx);
+            *func = result;
+        }
+        Expr::Function {
+            params,
+            body,
+            env,
+            name,
+        } => {
+            if params.len() != args.len() {
+                panic!(
+                    "Function {:?} expected {} arguments, got {}. Args: {:?}",
+                    name,
+                    params.len(),
+                    args.len(),
+                    args
+                );
+            }
+
+            let new_scope = Scope {
+                vars: RwLock::new(HashMap::new()),
+                parent: Some(env.scope.clone()),
+            };
+
+            let mut new_ctx = Context {
+                parsing: env.parsing.clone(),
+                scope: Arc::new(new_scope),
+            };
+
+            // If named, bind self to support recursion
+            if let Some(fn_name) = &name {
+                let func_clone = Expr::Function {
+                    params: params.clone(),
+                    body: body.clone(),
+                    env: env.clone(),
+                    name: name.clone(),
+                };
+                new_ctx.define(fn_name.clone().into(), func_clone);
+            }
+
+            for (param, arg) in params.into_iter().zip(args.iter_mut()) {
+                new_ctx.define(param.clone().into(), eval(arg.clone(), ctx));
+            }
+
+            let body_expr = *body.clone();
+            *func = eval(body_expr, &mut new_ctx);
+        }
+        _ => {
+            return;
+        }
+    }
+}
+
+// pub fn eval_in_place(expr: &mut Expr, ctx: &mut Context) {
+//     // expr
+
+//     let mut is_in_new_env = false;
+//     let saved_ctx = ctx.clone();
+
+//     loop {
+//         match expr {
+//             Expr::Sym(s) => {
+//                 if let Some(replacement) = ctx.resolve(&Expr::Sym(s.clone())) {
+//                     *expr = replacement;
+//                 }
+//             }
+//             Expr::Ref(r) => {
+//                 let mut inner = r.read().unwrap().clone();
+//                 *expr = inner;
+//                 eval_in_place(expr, ctx);
+//             }
+//             Expr::Quoted(q) => {
+//                 *expr = *q.clone();
+//             }
+//             Expr::List(list) => {
+//                 if list.is_empty() {
+//                     break;
+//                 }
+
+//                 // Treat the list as a function application
+//                 let mut func_expr = list[0].clone();
+//                 let mut args = list[1..].to_vec();
+//                 eval_in_place(&mut func_expr, ctx);
+//                 match func_expr {
+//                     Expr::Extern(f) => {
+//                         *expr = f.call(&mut args, ctx);
+//                     }
+//                     Expr::Function { params, body, env, name } => {
+//                         if params.len() != args.len() {
+//                             stop!(
+//                                 "Function {:?} expected {} arguments, got {}. Args: {:?}",
+//                                 name,
+//                                 params.len(),
+//                                 args.len(),
+//                                 args
+//                             );
+//                         }
+
+//                         let new_scope = Scope {
+//                             vars: RwLock::new(HashMap::new()),
+//                             parent: Some(env.scope.clone()),
+//                         };
+
+//                         let new_ctx = Context {
+//                             parsing: env.parsing.clone(),
+//                             scope: Arc::new(new_scope),
+//                         };
+
+//                         // If named, bind self to support recursion
+//                         if let Some(fn_name) = &name {
+//                             let func_clone = Expr::Function {
+//                                 params: params.clone(),
+//                                 body: body.clone(),
+//                                 env: env.clone(),
+//                                 name: name.clone(),
+//                             };
+//                             new_ctx.define(fn_name.clone().into(), func_clone);
+//                         }
+
+//                         for (param, mut arg) in params.into_iter().zip(args.into_iter()) {
+//                             eval_in_place(&mut arg, ctx);
+//                             new_ctx.define(param.clone().into(), arg);
+//                         }
+
+//                         *expr = *body.clone();
+//                         *ctx = new_ctx;
+//                         is_in_new_env = true;
+//                         continue;
+//                     }
+//                     other => {
+//                         *expr = other;
+//                     }
+//                 }
+//             }
+//             Expr::Map(m) => {
+//                 let mut evaluated_map = BTreeMap::new();
+//                 for (k, v) in m.iter() {
+//                     let mut eval_k = k.clone();
+//                     let mut eval_v = v.clone();
+//                     eval_in_place(&mut eval_k, ctx);
+//                     eval_in_place(&mut eval_v, ctx);
+//                     evaluated_map.insert(eval_k, eval_v);
+//                 }
+//                 *expr = Expr::Map(evaluated_map);
+//             }
+//             Expr::HashMap(m) => {
+//                 let mut evaluated_map = HashMap::new();
+//                 for (k, v) in m.iter() {
+//                     let mut eval_k = k.clone();
+//                     let mut eval_v = v.clone();
+//                     eval_in_place(&mut eval_k, ctx);
+//                     eval_in_place(&mut eval_v, ctx);
+//                     evaluated_map.insert(eval_k, eval_v);
+//                 }
+//                 *expr = Expr::HashMap(evaluated_map);
+
+//             }
+
+//             Expr::Int(_) | Expr::Float(_) | Expr::Str(_) | Expr::Nil | Expr::Tagged { .. } | Expr::Extern(_) | Expr::Function { .. } => {}
+//         }
+//         break;
+//     }
+
+//     if is_in_new_env {
+//         *ctx = saved_ctx;
+//     }
+// }
+
+// pub fn eval(expr: Expr, ctx: &mut Context) -> Expr {
+//     // println!("Evaluating: {}", expr);
+//     let mut expr = expr;
+//     eval_in_place(&mut expr, ctx);
+//     // println!("Result: {}", expr);
+//     expr
+// }
+
+// pub fn apply_in_place(func: &mut Expr, args: &mut [Expr], ctx: &mut Context) {
+//     eval_in_place(func, ctx);
+//     match func {
+//         Expr::Extern(f) => {
+//             let result = f.call(args, ctx);
+//             *func = result;
+//         }
+//         Expr::Function { params, body, env, name } => {
+//             if params.len() != args.len() {
+//                 panic!(
+//                     "Function {:?} expected {} arguments, got {}. Args: {:?}",
+//                     name,
+//                     params.len(),
+//                     args.len(),
+//                     args
+//                 );
+//             }
+
+//             let new_scope = Scope {
+//                 vars: RwLock::new(HashMap::new()),
+//                 parent: Some(env.scope.clone()),
+//             };
+
+//             let mut new_ctx = Context {
+//                 parsing: env.parsing.clone(),
+//                 scope: Arc::new(new_scope),
+//             };
+
+//             // If named, bind self to support recursion
+//             if let Some(fn_name) = &name {
+//                 let func_clone = Expr::Function {
+//                     params: params.clone(),
+//                     body: body.clone(),
+//                     env: env.clone(),
+//                     name: name.clone(),
+//                 };
+//                 new_ctx.define(fn_name.clone().into(), func_clone);
+//             }
+
+//             for (param, mut arg) in params.into_iter().zip(args.iter_mut()) {
+//                 eval_in_place(arg, ctx);
+//                 new_ctx.define(param.clone().into(), arg.clone());
+//             }
+
+//             let mut body_expr = *body.clone();
+//             eval_in_place(&mut body_expr, &mut new_ctx);
+//             *func = body_expr;
+//         }
+//         _ => {
+//             return;
+//         }
+//     }
+// }

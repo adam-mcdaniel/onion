@@ -1,0 +1,504 @@
+
+(struct Tile (owner inf arch cav art)
+    (get_total_power () {
+        self.inf + self.arch + self.cav + self.art
+    })
+)
+
+(struct BattleGame (w h)
+    (load () {
+        ;; Initialize fields explicitly to avoid constructor arg limit
+        self.grid = (Collections.map (Collections.range 0 self.w * self.h) (fun (i) {
+            x = i % self.w
+            y = i / self.w
+            
+            ;; Return a list of [owner inf] from the if-expression to avoid scope issues
+            data = (if x < 2 {
+                (list 1 5)
+            } {
+                (if x > 3 {
+                    (list 2 5)
+                } {
+                    (list 0 0)
+                })
+            })
+            
+            owner = (nth 0 data)
+            inf = (nth 1 data)
+            
+            (Tile owner inf 0 0 0)
+        }))
+        
+        self.cursor_x = 0
+        self.cursor_y = 0
+        self.selected_x = -1
+        self.selected_y = -1
+        self.reserves = 50
+        self.phase = 0
+        self.turn_number = 1
+        self.menu_unit_type = 0
+        self.timer = 0
+    })
+
+    (get_tile (x y) {
+        idx = y * self.w + x
+        (if (and (x >= 0) (and (x < self.w) (and (y >= 0) (y < self.h)))) {
+            (nth idx self.grid)
+        } {
+            0
+        })
+    })
+
+    (set_tile (x y new_tile) {
+         idx = y * self.w + x
+         before = (take idx self.grid)
+         after = (drop (idx + 1) self.grid)
+         ;; (println "DEBUG set_tile" x y new_tile)
+         self.grid = (Collections.flatten (list before new_tile after))
+    })
+
+    (update (dt) {
+        self.timer = self.timer - dt
+        (if self.timer < 0 { self.timer = 0 })
+
+        (if self.timer <= 0 {
+            input_processed = 0
+            
+            ;; Cursor Movement
+            (if (Game.is_key_down "UP") {
+                (if self.phase == 2 {
+                    self.menu_unit_type = (self.menu_unit_type - 1 + 4) % 4
+                } {
+                    self.cursor_y = (self.cursor_y - 1 + self.h) % self.h
+                })
+                input_processed = 1
+            })
+            (if (Game.is_key_down "DOWN") {
+                 (if self.phase == 2 {
+                    self.menu_unit_type = (self.menu_unit_type + 1) % 4
+                } {
+                    self.cursor_y = (self.cursor_y + 1) % self.h
+                })
+                input_processed = 1
+            })
+            (if (Game.is_key_down "LEFT") {
+                (if self.phase == 2 {
+                    (self.modify_units_at_cursor (0 - 1))
+                } {
+                    self.cursor_x = (self.cursor_x - 1 + self.w) % self.w
+                })
+                input_processed = 1
+            })
+            (if (Game.is_key_down "RIGHT") {
+                 (if self.phase == 2 {
+                    (self.modify_units_at_cursor 1)
+                } {
+                    self.cursor_x = (self.cursor_x + 1) % self.w
+                })
+                input_processed = 1
+            })
+    
+            ;; Phase logic
+            (if (Game.is_key_down "SPACE") {
+                tile = (self.get_tile self.cursor_x self.cursor_y)
+                (if self.phase == 0 {
+                    ;; ALLOCATE -> OPEN MENU if owned
+                     (if tile != 0 {
+                        (if tile.owner == 1 {
+                            self.phase = 2
+                        })
+                    })
+                } {
+                    (if self.phase == 2 {
+                        self.phase = 0
+                    } {
+                        ;; ATTACK MODE
+                        (if tile != 0 {
+                             (if tile.owner == 1 {
+                                (if self.selected_x != -1 {
+                                    ;; Attempt Merge or Deselect
+                                    dx = (Math.abs (self.selected_x - self.cursor_x))
+                                    dy = (Math.abs (self.selected_y - self.cursor_y))
+                                    (if (and (dx <= 1) (dy <= 1)) {
+                                         source = (self.get_tile self.selected_x self.selected_y)
+                                         (if (or (self.selected_x != self.cursor_x) (self.selected_y != self.cursor_y)) {
+                                             self.execute_merge source tile
+                                         } {
+                                             self.selected_x = -1
+                                         })
+                                    })
+                                } {
+                                    ;; Select Friendly
+                                    self.selected_x = self.cursor_x
+                                    self.selected_y = self.cursor_y
+                                })
+                            } {
+                                 (if (and (tile.owner == 2) (self.selected_x != -1)) {
+                                     (IO.append_file "debug.log" (String.fmt "Attack check: sel {},{} cur {},{}\n" self.selected_x self.selected_y self.cursor_x self.cursor_y))
+                                     
+                                     dx = (Math.abs (self.selected_x - self.cursor_x))
+                                     dy = (Math.abs (self.selected_y - self.cursor_y))
+                                     
+                                     (if (and (dx <= 1) (dy <= 1)) {
+                                         source = (self.get_tile self.selected_x self.selected_y)
+                                         pow = (source.get_total_power)
+                                         (IO.append_file "debug.log" (String.fmt "Start Attack calc. source power: {}\n" pow))
+                                         
+                                         (if pow > 0 {
+                                             (IO.append_file "debug.log" "Power > 0. Executing.\n")
+                                             self.execute_attack source tile
+                                         } {
+                                             (IO.append_file "debug.log" "Power <= 0.\n")
+                                         })
+                                     } {
+                                          (IO.append_file "debug.log" (String.fmt "Distance too far: dx {}, dy {}\n" dx dy))
+                                     })
+                                 })
+                            })
+                        })
+                    })
+                })
+                input_processed = 1
+            })
+    
+            (if (Game.is_key_down "ENTER") {
+                (if self.phase == 0 {
+                    self.phase = 1 ;; Switch to ATTACK
+                    self.selected_x = -1
+                } {
+                    (if self.phase == 1 {
+                        self.end_turn
+                    } {
+                        ;; Phase 2 (Menu) -> Exit to Phase 0
+                        (if self.phase == 2 {
+                            self.phase = 0
+                        })
+                    })
+                })
+                input_processed = 1
+            })
+            
+            (if input_processed == 1 {
+                self.timer = 0.15
+            })
+        })
+    })
+
+    (modify_units_at_cursor (amount) {
+        tile = (self.get_tile self.cursor_x self.cursor_y)
+        
+        (if (tile != 0) {
+            (if (tile.owner == 1) {
+                new_inf = tile.inf
+                new_arch = tile.arch
+                new_cav = tile.cav
+                new_art = tile.art
+                changed = 0
+
+                ;; BUYING
+                (if amount > 0 {
+                     (if (self.reserves >= 1) {
+                         (if self.menu_unit_type == 0 {
+                             self.reserves = self.reserves - 1
+                             new_inf = new_inf + 1
+                             changed = 1
+                         })
+                         (if self.menu_unit_type == 1 {
+                             self.reserves = self.reserves - 1
+                             new_arch = new_arch + 1
+                             changed = 1
+                         })
+                         (if self.menu_unit_type == 2 {
+                             self.reserves = self.reserves - 1
+                             new_cav = new_cav + 1
+                             changed = 1
+                         })
+                         (if self.menu_unit_type == 3 {
+                             self.reserves = self.reserves - 1
+                             new_art = new_art + 1
+                             changed = 1
+                         })
+                     })
+                } {
+                    ;; SELLING
+                     (if self.menu_unit_type == 0 {
+                         (if tile.inf > 0 {
+                             self.reserves = self.reserves + 1
+                             new_inf = new_inf - 1
+                             changed = 1
+                         })
+                     })
+                     (if self.menu_unit_type == 1 {
+                         (if tile.arch > 0 {
+                             self.reserves = self.reserves + 1
+                             new_arch = new_arch - 1
+                             changed = 1
+                         })
+                     })
+                     (if self.menu_unit_type == 2 {
+                         (if tile.cav > 0 {
+                             self.reserves = self.reserves + 1
+                             new_cav = new_cav - 1
+                             changed = 1
+                         })
+                     })
+                     (if self.menu_unit_type == 3 {
+                         (if tile.art > 0 {
+                             self.reserves = self.reserves + 1
+                             new_art = new_art - 1
+                             changed = 1
+                         })
+                     })
+                })
+                
+                (if changed == 1 {
+                    new_t = (Tile tile.owner new_inf new_arch new_cav new_art)
+                    (println "Updating Tile:" new_t)
+                    (self.set_tile self.cursor_x self.cursor_y new_t)
+                })
+            })
+        })
+    })
+
+    (execute_merge (source dest) {
+        (println "MERGE!" source dest)
+        new_dest = (Tile dest.owner (dest.inf + source.inf) (dest.arch + source.arch) (dest.cav + source.cav) (dest.art + source.art))
+        new_source = (Tile source.owner 0 0 0 0)
+        
+        (self.set_tile self.selected_x self.selected_y new_source)
+        (self.set_tile self.cursor_x self.cursor_y new_dest)
+        
+        self.selected_x = -1
+        self.selected_y = -1
+    })
+
+    (execute_attack (attacker defender) {
+        (println "ATTACK!" attacker defender)
+        
+        ;; Check for instant conquest (empty tile)
+        (if (defender.get_total_power) == 0 {
+             (println "Instant Conquest!")
+             new_defender = (Tile 1 attacker.inf attacker.arch attacker.cav attacker.art)
+             new_attacker = (Tile attacker.owner 0 0 0 0)
+             
+             (self.set_tile self.selected_x self.selected_y new_attacker)
+             (self.set_tile self.cursor_x self.cursor_y new_defender)
+             
+             self.selected_x = -1
+             self.selected_y = -1
+        } {
+            result = (Game.simulate_battle attacker.inf attacker.arch attacker.cav attacker.art defender.inf defender.arch defender.cav defender.art)
+            
+            (if result == 1 {
+                (println "Victory!")
+                new_defender = (Tile 1 attacker.inf attacker.arch attacker.cav attacker.art)
+                new_attacker = (Tile attacker.owner 0 0 0 0)
+                
+                (self.set_tile self.cursor_x self.cursor_y new_defender)
+                (self.set_tile self.selected_x self.selected_y new_attacker)
+
+                self.reserves = self.reserves + 10
+            } {
+                (println "Defeat!")
+                new_attacker = (Tile attacker.owner 0 0 0 0)
+                (self.set_tile self.selected_x self.selected_y new_attacker)
+            })
+            
+            self.selected_x = -1
+            self.selected_y = -1
+        })
+    })
+
+    (end_turn () {
+        self.phase = 0
+        self.turn_number = self.turn_number + 1
+        self.reserves = self.reserves + 10
+        (println "Turn Ended. Turn:" self.turn_number)
+        
+        (for i (Collections.range 0 self.w * self.h) {
+             t_idx = i
+             t = (nth t_idx self.grid)
+             (if t.owner == 2 {
+                 (. t 'inf (t.inf + 1))
+                 (. t 'arch (t.arch + 1))
+             })
+        })
+    })
+
+    (draw () {
+        
+        (Game.clear 0x000000)
+        
+        cw = 64
+        ch = 64
+        off_x = 40
+        off_y = 60
+
+        (for i (Collections.range 0 self.w * self.h) {
+            x = i % self.w
+            y = i / self.w
+            tile_idx = i
+            tile = (nth tile_idx self.grid)
+            
+            col = 0x444444
+            (if tile.owner == 1 { col = 0x4444AA })
+            (if tile.owner == 2 { col = 0xAA4444 })
+            
+            rx = off_x + x * cw
+            ry = off_y + y * ch
+            
+            (Game.rect rx ry (cw - 2) (ch - 2) col)
+            
+            (if (and (self.phase == 2) (and (x == self.cursor_x) (y == self.cursor_y))) {
+                (Game.draw_text (rx + 4) (ry + 24) "<" 0xFFFFFF 1)
+                (Game.draw_text (rx + 52) (ry + 24) ">" 0xFFFFFF 1)
+                (Game.draw_text (rx + 20) (ry + 50) "MOD" 0xFFFF00 1)
+            })
+            
+            ;; Highlight selected stat if in Phase 2
+            col_i = 0xFFFFFF
+            col_a = 0xFFFFFF
+            col_c = 0xFFFFFF
+            col_s = 0xFFFFFF
+            
+            (if (and (self.phase == 2) (and (x == self.cursor_x) (y == self.cursor_y))) {
+                (if self.menu_unit_type == 0 { col_i = 0x00FF00 })
+                (if self.menu_unit_type == 1 { col_a = 0x00FF00 })
+                (if self.menu_unit_type == 2 { col_c = 0x00FF00 })
+                (if self.menu_unit_type == 3 { col_s = 0x00FF00 })
+            })
+
+            (Game.draw_text rx + 5 ry + 5 (String.fmt "I:{}" tile.inf) col_i 1)
+            (Game.draw_text rx + 5 ry + 15 (String.fmt "A:{}" tile.arch) col_a 1)
+            (Game.draw_text rx + 5 ry + 25 (String.fmt "C:{}" tile.cav) col_c 1)
+            (Game.draw_text rx + 5 ry + 35 (String.fmt "S:{}" tile.art) col_s 1)
+        })
+
+        (if self.selected_x != -1 {
+            sx = off_x + self.selected_x * cw
+            sy = off_y + self.selected_y * ch
+            (Game.rect sx sy cw 4 0xFF00FF)
+            (Game.rect sx sy + ch - 4 cw 4 0xFF00FF)
+            (Game.rect sx sy 4 ch 0xFF00FF)
+            (Game.rect sx + cw - 4 sy 4 ch 0xFF00FF)
+        })
+
+        cx = off_x + self.cursor_x * cw
+        cy = off_y + self.cursor_y * ch
+        (Game.rect cx cy cw 4 0xFFFF00)
+        (Game.rect cx cy + ch - 4 cw 4 0xFFFF00)
+        (Game.rect cx cy 4 ch 0xFFFF00)
+        (Game.rect cx + cw - 4 cy 4 ch 0xFFFF00)
+        
+        ;; Draw Phase Info
+        phase_name = "DEPLOY"
+        phase_color = 0xFFFFFF
+        hint = "Arrows: Move | Space: Menu | Enter: Attack"
+        
+        (if self.phase == 1 {
+            phase_name = "ATTACK"
+            phase_color = 0xFF0000
+            hint = "Arrows: Select Target | Space: Attack | Enter: End Turn"
+        })
+        (if self.phase == 2 {
+            phase_name = "MODIFY"
+            phase_color = 0x00FF00
+            hint = "Up/Down: Select | Left/Right: Modify | Enter: Exit"
+        })
+        
+        (Game.draw_text 10 10 (String.fmt "PHASE: {}" phase_name) phase_color 2)
+        (Game.draw_text 10 560 hint 0xAAAAAA 1)
+        
+        (if self.phase == 2 {
+             (Game.draw_text 10 40 (String.fmt "Selected Type: {}" self.menu_unit_type) 0xAAAAAA 1)
+        })
+        
+        (Game.draw_text 300 10 (String.fmt "Reserves: {}" self.reserves) 0xFFFF00)
+        (Game.draw_text 300 30 (String.fmt "Turn: {}" self.turn_number) 0xFFFFFF)
+    })
+)
+
+(def instance (BattleGame 6 6))
+
+
+
+
+(defun load () { 
+    (instance.load) 
+})
+(defun update (dt) { 
+    (instance.update dt) 
+})
+(defun draw () { 
+    (instance.draw) 
+})
+(Game.run 600 600 "Battle Tactics")
+                (if self.menu_unit_type == 2 { col_c = 0x00FF00 })
+                (if self.menu_unit_type == 3 { col_s = 0x00FF00 })
+            })
+
+            (Game.draw_text rx + 5 ry + 5 (String.fmt "I:{}" tile.inf) col_i 1)
+            (Game.draw_text rx + 5 ry + 15 (String.fmt "A:{}" tile.arch) col_a 1)
+            (Game.draw_text rx + 5 ry + 25 (String.fmt "C:{}" tile.cav) col_c 1)
+            (Game.draw_text rx + 5 ry + 35 (String.fmt "S:{}" tile.art) col_s 1)
+        })
+
+        (if self.selected_x != -1 {
+            sx = off_x + self.selected_x * cw
+            sy = off_y + self.selected_y * ch
+            (Game.rect sx sy cw 4 0xFF00FF)
+            (Game.rect sx sy + ch - 4 cw 4 0xFF00FF)
+            (Game.rect sx sy 4 ch 0xFF00FF)
+            (Game.rect sx + cw - 4 sy 4 ch 0xFF00FF)
+        })
+
+        cx = off_x + self.cursor_x * cw
+        cy = off_y + self.cursor_y * ch
+        (Game.rect cx cy cw 4 0xFFFF00)
+        (Game.rect cx cy + ch - 4 cw 4 0xFFFF00)
+        (Game.rect cx cy 4 ch 0xFFFF00)
+        (Game.rect cx + cw - 4 cy 4 ch 0xFFFF00)
+        
+        ;; Draw Phase Info
+        phase_name = "DEPLOY"
+        phase_color = 0xFFFFFF
+        hint = "Arrows: Move | Space: Menu | Enter: Attack"
+        
+        (if self.phase == 1 {
+            phase_name = "ATTACK"
+            phase_color = 0xFF0000
+            hint = "Arrows: Select Target | Space: Attack | Enter: End Turn"
+        })
+        (if self.phase == 2 {
+            phase_name = "MODIFY"
+            phase_color = 0x00FF00
+            hint = "Up/Down: Select | Left/Right: Modify | Enter: Exit"
+        })
+        
+        (Game.draw_text 10 10 (String.fmt "PHASE: {}" phase_name) phase_color 2)
+        (Game.draw_text 10 560 hint 0xAAAAAA 1)
+        
+        (if self.phase == 2 {
+             (Game.draw_text 10 40 (String.fmt "Selected Type: {}" self.menu_unit_type) 0xAAAAAA 1)
+        })
+        
+        (Game.draw_text 300 10 (String.fmt "Reserves: {}" self.reserves) 0xFFFF00)
+        (Game.draw_text 300 30 (String.fmt "Turn: {}" self.turn_number) 0xFFFFFF)
+    })
+)
+
+(def instance (BattleGame 6 6))
+
+
+
+
+(defun load () { 
+    (instance.load) 
+})
+(defun update (dt) { 
+    (instance.update dt) 
+})
+(defun draw () { 
+    (instance.draw) 
+})
+(Game.run 600 600 "Battle Tactics")

@@ -1,5 +1,6 @@
 use crate::context::Context;
 use crate::expr::Expr;
+use crate::stdlib::game;
 use font8x8::{BASIC_FONTS, UnicodeFonts};
 use image::GenericImageView;
 use image::io::Reader as ImageReader;
@@ -9,6 +10,12 @@ use std::collections::BTreeMap;
 use std::io::Cursor;
 use std::sync::{Arc, RwLock};
 use std::time::Instant;
+
+// Wrapper to allow storing Window in a global static RwLock.
+// SAFETY: We must ensure we only access the window through the RwLock guarantees.
+pub struct WindowWrapper(pub Window);
+unsafe impl Send for WindowWrapper {}
+unsafe impl Sync for WindowWrapper {}
 
 pub fn register(ctx: &mut Context) {
     let mut game_exports = BTreeMap::new();
@@ -42,6 +49,7 @@ pub fn register(ctx: &mut Context) {
                     }
                 };
 
+                // Create the window locally first
                 let mut window = match Window::new(&title, width, height, WindowOptions::default())
                 {
                     Ok(win) => win,
@@ -53,6 +61,14 @@ pub fn register(ctx: &mut Context) {
 
                 window.set_target_fps(60);
 
+                // Move window and handles into Global State
+                {
+                    let mut state = GAME_STATE.write().unwrap();
+                    state.resize(width, height);
+                    state.audio_handle = stream_handle.clone();
+                    state.window = Some(WindowWrapper(window));
+                }
+
                 if let Some(load_fn) = ctx.resolve(&Expr::sym("load")) {
                     let call_args = vec![];
                     crate::stdlib::call_anon_fn(&load_fn, &call_args, ctx);
@@ -60,19 +76,33 @@ pub fn register(ctx: &mut Context) {
 
                 let mut last_frame = Instant::now();
 
-                {
-                    let mut state = GAME_STATE.write().unwrap();
-                    state.resize(width, height);
-                    state.audio_handle = stream_handle.clone();
-                }
+                let mut running = true;
 
-                while window.is_open() && !window.is_key_down(Key::Escape) {
+                while running {
                     let now = Instant::now();
                     let dt_secs = now.duration_since(last_frame).as_secs_f64();
                     last_frame = now;
 
-                    crate::stdlib::game::update_input_state(&window);
+                    // 1. Update Input State (requires Lock)
+                    // We do this in a block so we drop the lock before running user scripts
+                    {
+                        let mut state = GAME_STATE.write().unwrap();
 
+                        // Check if window is still open or Escape pressed
+                        if let Some(wrapper) = &state.window {
+                            if !wrapper.0.is_open() {
+                                running = false;
+                            }
+                        }
+
+                        if !running {
+                            break;
+                        }
+
+                        state.update_keys();
+                    }
+
+                    // 2. Run User Scripts (No Lock Held)
                     if let Some(update_fn) = ctx.resolve(&Expr::sym("update")) {
                         let call_args = vec![Expr::Float(dt_secs)];
                         crate::stdlib::call_anon_fn(&update_fn, &call_args, ctx);
@@ -83,15 +113,33 @@ pub fn register(ctx: &mut Context) {
                         crate::stdlib::call_anon_fn(&draw_fn, &call_args, ctx);
                     }
 
-                    // Blit
                     {
-                        let state = GAME_STATE.read().unwrap();
-                        if state.width > 0 && state.height > 0 {
-                            window
-                                .update_with_buffer(&state.buffer, state.width, state.height)
-                                .unwrap();
+                        let mut state = GAME_STATE.write().unwrap();
+
+                        let GameState {
+                            window,
+                            buffer,
+                            width,
+                            height,
+                            ..
+                        } = &mut *state;
+
+                        if let Some(wrapper) = window {
+                            // Note: width/height are references now, so we use * to deref
+                            if *width > 0 && *height > 0 {
+                                wrapper
+                                    .0
+                                    .update_with_buffer(buffer, *width, *height)
+                                    .unwrap();
+                            }
                         }
                     }
+                }
+
+                // Cleanup: Optionally remove window from state when done
+                {
+                    let mut state = GAME_STATE.write().unwrap();
+                    state.window = None;
                 }
 
                 Expr::Nil
@@ -101,6 +149,10 @@ pub fn register(ctx: &mut Context) {
         ),
     );
 
+    // ... [Rest of your exports: clear, rect, etc. remain the same] ...
+
+    // Example: Updating is_key_down to use the internal logic is essentially the same
+    // because we updated the GameState struct, the existing extern_fun works fine.
     game_exports.insert(
         Expr::sym("clear"),
         Expr::extern_fun(
@@ -119,6 +171,37 @@ pub fn register(ctx: &mut Context) {
             },
             "clear",
             "Clear screen",
+        ),
+    );
+
+    // Example: Updating is_key_down to use the internal logic is essentially the same
+    // because we updated the GameState struct, the existing extern_fun works fine.
+    game_exports.insert(
+        Expr::sym("present"),
+        Expr::extern_fun(
+            |args, ctx| {
+                let mut state = GAME_STATE.write().unwrap();
+                let GameState {
+                    window,
+                    buffer,
+                    width,
+                    height,
+                    ..
+                } = &mut *state;
+
+                if let Some(wrapper) = window {
+                    // Note: width/height are references now, so we use * to deref
+                    if *width > 0 && *height > 0 {
+                        wrapper
+                            .0
+                            .update_with_buffer(buffer, *width, *height)
+                            .unwrap();
+                    }
+                }
+                Expr::Nil
+            },
+            "present",
+            "Present the screen",
         ),
     );
 
@@ -178,6 +261,33 @@ pub fn register(ctx: &mut Context) {
         ),
     );
 
+    game_exports.insert(
+        Expr::sym("width"),
+        Expr::extern_fun(
+            |args, ctx| {
+                let state = GAME_STATE.read().unwrap();
+                Expr::Int(state.width as i64)
+            },
+            "width",
+            "Get screen width",
+        ),
+    );
+
+    game_exports.insert(
+        Expr::sym("height"),
+        Expr::extern_fun(
+            |args, ctx| {
+                let state = GAME_STATE.read().unwrap();
+                Expr::Int(state.height as i64)
+            },
+            "height",
+            "Get screen height",
+        ),
+    );
+
+    // ... [Rest of image/sound exports] ...
+
+    // RE-INSERTING the rest for completeness of the file structure
     game_exports.insert(
         Expr::sym("load_image"),
         Expr::extern_fun(
@@ -265,7 +375,7 @@ pub fn register(ctx: &mut Context) {
         Expr::sym("draw_text"),
         Expr::extern_fun(
             |args, ctx| {
-                if args.len() != 4 {
+                if args.len() < 4 || args.len() > 5 {
                     return Expr::Nil;
                 }
                 let x = crate::context::eval(args[0].clone(), ctx)
@@ -282,16 +392,23 @@ pub fn register(ctx: &mut Context) {
                     .as_int()
                     .unwrap_or(0xFFFFFF) as u32;
 
+                let scale = if args.len() == 5 {
+                    crate::context::eval(args[4].clone(), ctx)
+                        .as_int()
+                        .unwrap_or(2) as i64
+                } else {
+                    2
+                };
+
                 let mut state = GAME_STATE.write().unwrap();
-                state.draw_text(x, y, &text, color);
+                state.draw_text(x, y, &text, color, scale);
                 Expr::Nil
             },
             "draw_text",
-            "Draw text to screen.",
+            "Draw text to screen. Args: x, y, text, color, [scale]",
         ),
     );
 
-    // Game.load_sound("path.wav") -> handle
     game_exports.insert(
         Expr::sym("load_sound"),
         Expr::extern_fun(
@@ -356,12 +473,14 @@ pub fn register(ctx: &mut Context) {
         ),
     );
 
+    super::battle::register_sim_commands(&mut game_exports);
+
     let mod_val = Expr::Ref(Arc::new(RwLock::new(Expr::Map(game_exports))));
     ctx.define(Expr::sym("Game"), mod_val);
 }
 
 lazy_static::lazy_static! {
-    static ref GAME_STATE: RwLock<GameState> = RwLock::new(GameState::new());
+    pub static ref GAME_STATE: RwLock<GameState> = RwLock::new(GameState::new());
 }
 
 struct GameImage {
@@ -374,14 +493,16 @@ struct GameSound {
     data: Vec<u8>,
 }
 
-struct GameState {
-    buffer: Vec<u32>,
-    width: usize,
-    height: usize,
+pub struct GameState {
+    pub buffer: Vec<u32>,
+    pub width: usize,
+    pub height: usize,
     keys_down: std::collections::HashSet<String>,
     images: BTreeMap<usize, GameImage>,
     sounds: BTreeMap<usize, GameSound>,
     audio_handle: Option<OutputStreamHandle>,
+    // Stored globally now
+    pub window: Option<WindowWrapper>,
     next_id: usize,
 }
 
@@ -395,6 +516,7 @@ impl GameState {
             images: BTreeMap::new(),
             sounds: BTreeMap::new(),
             audio_handle: None,
+            window: None,
             next_id: 1,
         }
     }
@@ -405,6 +527,41 @@ impl GameState {
             self.height = h;
             self.buffer = vec![0; w * h];
         }
+    }
+
+    // Moved the input logic inside here to access the stored Window
+    fn update_keys(&mut self) {
+        // We can only check keys if we have a window
+        let window = match &self.window {
+            Some(w) => &w.0,
+            None => return,
+        };
+
+        self.keys_down.clear();
+
+        // Helper closure to avoid repetition
+        let mut check_key = |k: Key, name: &str| {
+            if window.is_key_down(k) {
+                self.keys_down.insert(name.to_string());
+            }
+        };
+
+        check_key(Key::A, "A");
+        check_key(Key::B, "B");
+        check_key(Key::C, "C");
+        check_key(Key::D, "D");
+        check_key(Key::E, "E");
+        check_key(Key::W, "W");
+        check_key(Key::S, "S");
+        check_key(Key::X, "X");
+        check_key(Key::Z, "Z");
+        check_key(Key::Up, "UP");
+        check_key(Key::Down, "DOWN");
+        check_key(Key::Left, "LEFT");
+        check_key(Key::Right, "RIGHT");
+        check_key(Key::Space, "SPACE");
+        check_key(Key::Enter, "ENTER");
+        check_key(Key::Escape, "ESCAPE");
     }
 
     fn draw_rect(&mut self, x: i64, y: i64, w: i64, h: i64, color: u32) {
@@ -486,84 +643,45 @@ impl GameState {
         }
     }
 
-    fn draw_text(&mut self, x: i64, y: i64, text: &str, color: u32) {
+    fn draw_text(&mut self, x: i64, y: i64, text: &str, color: u32, scale: i64) {
         let mut curr_x = x;
         let mut curr_y = y;
 
         for c in text.chars() {
             if c == '\n' {
-                curr_y += 8;
+                curr_y += 8 * scale;
                 curr_x = x;
                 continue;
             }
             if let Some(glyph) = BASIC_FONTS.get(c) {
+                // Do it with scaling
                 for (row_i, row) in glyph.iter().enumerate() {
                     for col_i in 0..8 {
                         if (row >> col_i) & 1 == 1 {
-                            let px = curr_x + col_i as i64;
-                            let py = curr_y + row_i as i64;
-                            if px >= 0
-                                && py >= 0
-                                && px < self.width as i64
-                                && py < self.height as i64
-                            {
-                                // Simple bounds check to avoid panic
-                                if (py as usize) < self.height && (px as usize) < self.width {
-                                    self.buffer[(py as usize) * self.width + (px as usize)] = color;
+                            for sy in 0..scale {
+                                for sx in 0..scale {
+                                    let px = curr_x + (col_i as i64) * scale + sx;
+                                    let py = curr_y + (row_i as i64) * scale + sy;
+                                    if px >= 0
+                                        && py >= 0
+                                        && px < self.width as i64
+                                        && py < self.height as i64
+                                    {
+                                        // Simple bounds check to avoid panic
+                                        if (py as usize) < self.height && (px as usize) < self.width
+                                        {
+                                            self.buffer
+                                                [(py as usize) * self.width + (px as usize)] =
+                                                color;
+                                        }
+                                    }
                                 }
                             }
                         }
                     }
                 }
-                curr_x += 8;
+                curr_x += 8 * scale;
             }
         }
-    }
-}
-
-pub fn update_input_state(window: &Window) {
-    let mut state = GAME_STATE.write().unwrap();
-    state.keys_down.clear();
-    if window.is_key_down(Key::A) {
-        state.keys_down.insert("A".to_string());
-    }
-    if window.is_key_down(Key::B) {
-        state.keys_down.insert("B".to_string());
-    }
-    if window.is_key_down(Key::C) {
-        state.keys_down.insert("C".to_string());
-    }
-    if window.is_key_down(Key::D) {
-        state.keys_down.insert("D".to_string());
-    }
-    if window.is_key_down(Key::E) {
-        state.keys_down.insert("E".to_string());
-    }
-    if window.is_key_down(Key::W) {
-        state.keys_down.insert("W".to_string());
-    }
-    if window.is_key_down(Key::S) {
-        state.keys_down.insert("S".to_string());
-    }
-    if window.is_key_down(Key::Up) {
-        state.keys_down.insert("UP".to_string());
-    }
-    if window.is_key_down(Key::Down) {
-        state.keys_down.insert("DOWN".to_string());
-    }
-    if window.is_key_down(Key::Left) {
-        state.keys_down.insert("LEFT".to_string());
-    }
-    if window.is_key_down(Key::Right) {
-        state.keys_down.insert("RIGHT".to_string());
-    }
-    if window.is_key_down(Key::Space) {
-        state.keys_down.insert("SPACE".to_string());
-    }
-    if window.is_key_down(Key::Enter) {
-        state.keys_down.insert("ENTER".to_string());
-    }
-    if window.is_key_down(Key::Escape) {
-        state.keys_down.insert("ESCAPE".to_string());
     }
 }
