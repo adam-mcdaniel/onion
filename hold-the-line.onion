@@ -138,16 +138,18 @@
         self.input_wait = self.input_wait - dt
         (if self.game_state == 1 {
 
-            (if self.game_over != 0 {
-                (if (Game.is_key_down "ENTER") {
-                    self.game_state = 0
-                    self.game_over = 0
-                })
-            })
-
             self.timer = self.timer - dt
             (if self.timer < 0 { self.timer = 0 })
 
+            (if (and self.timer <= 0 self.game_over != 0) {
+                (if (Game.is_key_down "ENTER") or (Game.is_key_down "Z") or (Game.is_key_down "X") {
+                    (self.load)
+                    (self.init_battle)
+                    self.game_state = 0
+                    self.game_over = 0
+                    self.input_wait = 0.2
+                })
+            })
             (if (and (self.timer <= 0) (self.game_over == 0)) {
                 input_processed = 0
 
@@ -946,7 +948,10 @@
                 (if self.game_over == 2 {
                     (Game.draw_text 200 260 "DEFEAT" 0xFF0000 4)
                 })
-                (Game.draw_text 160 350 "Press ENTER to return to menu" 0xFFFFFF 2)
+                ;; Draw a centered instruction
+                instr = "Press ENTER for menu!"
+                instr_w = (len instr) * 8 * 2
+                (Game.draw_text ((Game.width) - instr_w) / 2 350 instr 0xAAAAAA 2)
             })
         })
     })
