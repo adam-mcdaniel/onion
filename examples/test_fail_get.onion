@@ -1,3 +1,0 @@
-(println "Testing strict get...")
-(println "Test 2: Get out of bounds (should crash)")
-(Collections.get (list 1 2 3) 10)

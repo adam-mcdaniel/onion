@@ -1,3 +1,0 @@
-(println "Testing invalid battle args...")
-(Game.simulate_battle 1 2 3)
-(println "FATAL: Should not reach here")

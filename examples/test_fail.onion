@@ -1,5 +1,0 @@
-(println "Starting failure test")
-;; This should trigger a Runtime Error and exit
-(println "Testing + operator with invalid types...")
-(+ 1 "string")
-(println "FATAL: Should not reach here")

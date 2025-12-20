@@ -1,6 +1,0 @@
-(println "Testing valid math...")
-(println (+ 1 2))
-(println (- 10 5))
-(println (* 3 4))
-(println (/ 20 4))
-(println "Success")
