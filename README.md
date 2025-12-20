@@ -4,6 +4,9 @@ Onion is a ***terrible*** LISP based programming language that smells bad and ma
 
 ![Hold The Line!](assets/hold-the-line.gif)
 
+> [!TIP]
+> To run the game for yourself, run `cargo run --release -- ./hold-the-line.onion` in the project root after cloning!
+
 ## Table Of Contents
 
 1. [Introduction](#introduction)

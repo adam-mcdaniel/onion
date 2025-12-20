@@ -1,0 +1,1 @@
+cargo run --release -- ./hold-the-line.onion

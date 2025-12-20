@@ -7,12 +7,12 @@
 
 (struct BattleGame (w h)
     (load () {
-        ;; Initialize fields explicitly to avoid constructor arg limit
+        ;; arg limit is bs. doing it manually
         self.grid = (Collections.map (Collections.range 0 self.w * self.h) (fun (i) {
             x = i % self.w
             y = i / self.w
             
-            ;; Return a list of [owner inf] from the if-expression to avoid scope issues
+            ;; scoping is weird here. returning list just in case
             data = (if x < 1 {
                 (list 1 5)
             } {
@@ -52,18 +52,18 @@
         })
         
         (if enemy_exists == 0 {
-            self.game_over = 1 ;; VICTORY
+            self.game_over = 1 ;; we won.
             (println "Game Over: Victory")
         })
         
         (if player_exists == 0 {
-            self.game_over = 2 ;; DEFEAT
+            self.game_over = 2 ;; we lost. damn.
             (println "Game Over: Defeat")
         })
     })
 
     (transition_slide (pretime time text color) {
-        ;; Show a slide with text for time seconds
+        ;; text slide. simple.
         start = (Time.now)
         (while ((Time.now) - start) < pretime {})
         start = (Time.now)
@@ -90,14 +90,14 @@
          idx = y * self.w + x
          before = (take idx self.grid)
          after = (drop (idx + 1) self.grid)
-         ;; (println "DEBUG set_tile" x y new_tile)
+         ;; debug... remove later? (println "DEBUG set_tile" x y new_tile)
          self.grid = (Collections.flatten (list before new_tile after))
     })
 
     (get_unit_cost (type) {
-        (if type == 0 { 1 } {      ;; Infantry (Cheap)
-            (if type == 1 { 2 } {  ;; Archer (Standard)
-                (if type == 2 { 2 } { 8 }) ;; Cav (Elite) / Art (Expensive)
+        (if type == 0 { 1 } {      ;; cheap fodder
+            (if type == 1 { 2 } {  ;; shooters
+                (if type == 2 { 2 } { 8 }) ;; expensive stuff
             })
         })
     })
@@ -119,17 +119,17 @@
         (if self.timer <= 0 {
             input_processed = 0
         (if self.timer <= 0 {
-            ;; ... (Keep your existing AI trigger logic here: "if self.phase == 3...") ...
+            ;; logic checks... whatever
 
             input_processed = 0
 
             (if self.phase == 3 {
-                ;; 1. Execute AI Logic
+                ;; AI doing its thing
                 (self.draw)
                 (self.transition_slide 0.5 1.5 "The enemy advances..." 0xFF0000)
                 (self.ai_turn_logic)
                 
-                ;; 2. Reinforce AI (The logic you previously had in end_turn)
+                ;; cheating. gives AI free units
                 (for i (Collections.range 0 self.w * self.h) {
                      t_idx = i
                      t = (nth t_idx self.grid)
@@ -139,14 +139,14 @@
                      })
                 })
                 
-                ;; 3. Reset to Player Turn
+                ;; player turn again
                 self.phase = 0
                 self.turn_number = self.turn_number + 1
                 self.reserves = self.reserves + 10
                 (println "AI Turn Finished. Turn:" self.turn_number)
             })
 
-            ;; --- NEW ESCAPE LOGIC ---
+            ;; get me out of here
             (if (Game.is_key_down "ESCAPE") {
                 (if self.phase == 1 {
                      self.phase = 0
@@ -156,11 +156,11 @@
                      input_processed = 1
                 })
             })
-            ;; --- NEW AI LOGIC END ---
+            ;; done with AI junk
 
             input_processed = 0
             
-            ;; Cursor Movement
+            ;; moving the thing
             (if (Game.is_key_down "UP") {
                 (if self.phase == 2 {
                     self.menu_unit_type = (self.menu_unit_type - 1 + 4) % 4
@@ -194,12 +194,12 @@
                 input_processed = 1
             })
     
-            ;; Phase logic
+            ;; state machine hell
             (if (Game.is_key_down "SPACE") {
                 tile = (self.get_tile self.cursor_x self.cursor_y)
                 (if self.phase == 0 {
                     (println "Entering Modify Phase")
-                    ;; ALLOCATE -> OPEN MENU if owned
+                    ;; mine? open menu
                      (if tile != 0 {
                         (if tile.owner == 1 {
                             self.phase = 2
@@ -208,14 +208,14 @@
                 } {
                     (println "Processing Action in Phase:" self.phase)
                     (if self.phase == 1 {
-                        ;; ATTACK MODE
+                        ;; kill mode
                         (println "Attack Phase Action" tile)
                         (if tile != 0 {
                              (if tile.owner == 1 {
                                 (println "Friendly Tile Selected.")
-                                 ;; Handle Merge or Deselect
+                                 ;; merge? maybe?
                                 (if self.selected_x != -1 {
-                                    ;; Attempt Merge or Deselect
+                                    ;; trying to smash them together
                                     dx = (Math.abs (self.selected_x - self.cursor_x))
                                     dy = (Math.abs (self.selected_y - self.cursor_y))
                                     (if dx <= 1 and dy <= 1 and dx + dy > 0 {
@@ -228,7 +228,7 @@
                                          })
                                     })
                                 } {
-                                    ;; Select Friendly
+                                    ;; picked one
                                     self.selected_x = self.cursor_x
                                     self.selected_y = self.cursor_y
                                 })
@@ -251,9 +251,11 @@
                                  })
                             })
                         } {
+                            ;; nothing here
                             (println "No tile at cursor.")
                         })
                      } {
+                        ;; wrong phase. idiot.
                         (println "No action in this phase.")
                      })
                 })
@@ -262,14 +264,14 @@
     
             (if (Game.is_key_down "ENTER") {
                 (if self.phase == 0 {
-                    self.phase = 1 ;; Switch to ATTACK
+                    self.phase = 1 ;; violence time
                     self.selected_x = self.cursor_x
                     self.selected_y = self.cursor_y
                 } {
                     (if self.phase == 1 {
                         (self.end_turn)
                     } {
-                        ;; Phase 2 (Menu) -> Exit to Phase 0
+                        ;; back to map
                         (if self.phase == 2 {
                             self.phase = 0
                         })
@@ -295,7 +297,7 @@
                 new_art = tile.art
                 changed = 0
 
-                ;; BUYING
+                ;; spending cash
                 (if amount > 0 {
                      (if (self.reserves >= 1) {
                          (if self.menu_unit_type == 0 {
@@ -320,7 +322,7 @@
                          })
                      })
                 } {
-                    ;; SELLING
+                    ;; need money back
                      (if self.menu_unit_type == 0 {
                          (if tile.inf > 0 {
                              self.reserves = self.reserves + 1
@@ -361,6 +363,7 @@
     })
 
     (execute_merge (source dest) {
+        ;; SMASH TOGETHER
         (println "MERGE!" source dest)
         new_dest = (Tile dest.owner (dest.inf + source.inf) (dest.arch + source.arch) (dest.cav + source.cav) (dest.art + source.art))
         new_source = (Tile source.owner 0 0 0 0)
@@ -373,6 +376,7 @@
     })
 
     (execute_attack (attacker defender) {
+        ;; DIE
         (println "ATTACK!" attacker defender)
         
     })
@@ -393,9 +397,9 @@
 
     (end_turn () {
         (self.check_game_over)
-        ;; Switch to AI Phase
+        ;; AI's turn. go get coffee
         self.phase = 3 
-        self.timer = 0.5 ;; Give a small delay so the player sees the turn end
+        self.timer = 0.5 ;; wait. let them see what happened
         self.selected_x = -1
         self.selected_y = -1
         (println "Player Turn Ended. Starting AI Turn.")
@@ -405,18 +409,16 @@
         (println "AI Executing Moves...")
         
         
-        ;; Iterate through all tiles
+        ;; scanning everything
         (for i (Collections.range 0 self.w * self.h) {
             x = i % self.w
             y = i / self.w
             tile = (self.get_tile x y)
-
-            (println "AI Checking Tile" x y tile)
             
-            ;; Check if tile belongs to AI (2) and has troops
+            ;; mine? got dudes?
             (if tile != 0 and tile.owner == 2 and (tile.get_total_power) > 0 {
-                ;; Simple AI: Try to move in a random valid direction
-                ;; 0=UP, 1=DOWN, 2=LEFT, 3=RIGHT
+                ;; dumb AI. just random walk
+                ;; directions...
                 dir = (Math.floor (Math.rand) * 4)
                 tx = x
                 ty = y
@@ -429,15 +431,15 @@
                 target = (self.get_tile tx ty)
                 
                 (if target != 0 {
-                    ;; CASE 1: Attack Player
+                    ;; kill player
                     (if target.owner == 1 {
                         (println "AI Attacking" x y "->" tx ty)
-                        ;; Re-using your battle simulation logic logic manually to avoid UI selection dependency
+                        ;; reused logic. lazy.
                         res = (Game.simulate_battle target.inf target.arch target.cav target.art tile.inf tile.arch tile.cav tile.art )
                         winner = res ? 0
                         
                         (if winner == "Defender" {
-                            ;; AI Wins - Move remaining troops in
+                            ;; AI won. moving in
                             remain_inf = res ? 5
                             remain_arch = res ? 6
                             remain_cav = res ? 7
@@ -449,7 +451,7 @@
                             (self.set_tile tx ty new_ai_tile)
                             (self.set_tile x y empty_src)
                         } {
-                            ;; Player Defends - AI dies, Player troops reduced
+                            ;; failed. dead.
                             remain_inf = res ? 1
                             remain_arch = res ? 2
                             remain_cav = res ? 3
@@ -463,13 +465,13 @@
                         })
                     })
 
-                    ;; CASE 2: Move to Empty (Expand)
+                    ;; free real estate
                     (if target.owner == 0 {
-                        ;; Only move if we have enough troops to leave 1 behind
+                        ;; need spare dudes
                         (if (tile.get_total_power) > 1 {
                              (println "AI Moving" x y "->" tx ty)
                              
-                             ;; Move half troops
+                             ;; split 'em
                              move_inf = tile.inf / 2
                              move_arch = tile.arch / 2
                              move_cav = tile.cav / 2
@@ -494,27 +496,27 @@
 
 
     (check_visibility (tx ty) {
-        ;; 1. Check if I own the tile itself
+        ;; i own this?
         here = (self.get_tile tx ty)
         (if (and (here != 0) (here.owner == 1)) {
             1
         } {
-            ;; 2. Check all 4 neighbors for Player ownership
+            ;; neighbors?
             visible = 0
             
-            ;; Check Up
+            ;; up
             n = (self.get_tile tx ty - 1)
             (if (and (n != 0) (n.owner == 1)) { visible = 1 })
 
-            ;; Check Down
+            ;; down
             n = (self.get_tile tx ty + 1)
             (if (and (n != 0) (n.owner == 1)) { visible = 1 })
 
-            ;; Check Left
+            ;; left
             n = (self.get_tile tx - 1 ty)
             (if (and (n != 0) (n.owner == 1)) { visible = 1 })
 
-            ;; Check Right
+            ;; right
             n = (self.get_tile tx + 1 ty)
             (if (and (n != 0) (n.owner == 1)) { visible = 1 })
 
@@ -538,18 +540,18 @@
             rx = off_x + x * cw
             ry = off_y + y * ch
 
-            ;; --- FOG OF WAR CHECK ---
+            ;; can i see?
             is_visible = (self.check_visibility x y)
 
             (if is_visible == 1 {
-                ;; --- VISIBLE RENDERING ---
+                ;; drawing it
                 col = 0x444444
                 (if tile.owner == 1 { col = 0x4444AA })
                 (if tile.owner == 2 { col = 0xAA4444 })
                 
                 (Game.rect rx ry (cw - 2) (ch - 2) col)
                 
-                ;; Highlight selected stat if in Phase 2
+                ;; lighting up stats
                 col_i = 0xFFFFFF
                 col_a = 0xFFFFFF
                 col_c = 0xFFFFFF
@@ -567,15 +569,15 @@
                 (Game.draw_text rx + 5 ry + 25 (String.fmt "C:{}" tile.cav) col_c 1)
                 (Game.draw_text rx + 5 ry + 35 (String.fmt "S:{}" tile.art) col_s 1)
             } {
-                ;; --- HIDDEN RENDERING (FOG) ---
-                ;; Draw a dark gray box
+                ;; spooky darkness
+                ;; grey blob
                 (Game.rect rx ry (cw - 2) (ch - 2) 0x111111)
                 
-                ;; Draw a subtle question mark
+                ;; what is this?
                 (Game.draw_text rx + 24 ry + 20 "?" 0x333333 2)
             })
 
-            ;; --- UI OVERLAYS (Draw these over fog too) ---
+            ;; UI stuff. goes on top
             (if (and (self.phase == 2) (and (x == self.cursor_x) (y == self.cursor_y))) {
                 (Game.draw_text (rx + 4) (ry + 24) "<" 0xFFFFFF 1)
                 (Game.draw_text (rx + 52) (ry + 24) ">" 0xFFFFFF 1)
@@ -599,7 +601,7 @@
         (Game.rect cx cy 4 ch 0xFFFF00)
         (Game.rect cx + cw - 4 cy 4 ch 0xFFFF00)
         
-        ;; Draw Phase Info
+        ;; tell player what's happening
         phase_name = "DEPLOY"
         phase_color = 0xFFFFFF
         hint = "Arrows: Move | Space: Menu | Enter: Attack"

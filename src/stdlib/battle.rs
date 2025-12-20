@@ -1,7 +1,6 @@
 use crate::context::Context;
 use crate::expr::Expr;
 use crate::stdlib::game::GAME_STATE; // Import the global state
-use minifb::Key;
 use rand::Rng;
 use std::time::Instant;
 
